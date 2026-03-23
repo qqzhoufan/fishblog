@@ -1,0 +1,22 @@
+{
+  "name": "fishblog",
+  "version": "1.0.0",
+  "description": "A minimal blog running on Cloudflare Workers + D1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute fishblog-db --local --file=src/db/schema.sql",
+    "db:init:remote": "wrangler d1 execute fishblog-db --remote --file=src/db/schema.sql",
+    "setup": "bash setup.sh"
+  },
+  "dependencies": {
+    "hono": "^4.12.8",
+    "marked": "^17.0.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260317.1",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.76.0"
+  }
+}
