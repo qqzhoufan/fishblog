@@ -15,6 +15,13 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Check secrets
+        run: |
+          if [ -z "${{ secrets.CF_API_TOKEN }}" ] || [ -z "${{ secrets.CF_ACCOUNT_ID }}" ]; then
+            echo "::error::Missing required secrets. Please set CF_API_TOKEN and CF_ACCOUNT_ID in repository Settings → Secrets → Actions."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 
@@ -26,12 +33,26 @@ jobs:
 
       - name: Resolve D1 database ID
         run: |
-          DB_ID=$(npx wrangler d1 list --json 2>/dev/null | node -e "
-            const data = require('fs').readFileSync('/dev/stdin','utf8');
-            const dbs = JSON.parse(data);
-            const db = dbs.find(d => d.name === 'fishblog-db');
-            if (db) process.stdout.write(db.uuid);
+          DB_LIST=$(npx wrangler d1 list --json 2>&1)
+          DB_ID=$(echo "$DB_LIST" | node -e "
+            let input = '';
+            process.stdin.on('data', c => input += c);
+            process.stdin.on('end', () => {
+              try {
+                const dbs = JSON.parse(input);
+                const db = dbs.find(d => d.name === 'fishblog-db');
+                if (db) process.stdout.write(db.uuid);
+                else { console.error('Database fishblog-db not found'); process.exit(1); }
+              } catch(e) {
+                console.error('Failed to parse D1 list output:', input.slice(0, 500));
+                process.exit(1);
+              }
+            });
           ")
+          if [ -z "$DB_ID" ]; then
+            echo "::error::Could not resolve D1 database ID. Check your CF_API_TOKEN has D1 permissions."
+            exit 1
+          fi
           echo "Resolved database_id: $DB_ID"
           sed -i "s/placeholder-replace-after-creation/$DB_ID/" wrangler.toml
         env:
