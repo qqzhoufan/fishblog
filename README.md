@@ -85,9 +85,11 @@ GitHub Actions 会自动完成以下全部操作：
 ✅ 部署 Worker 到 Cloudflare 边缘网络
 ```
 
-### 第五步：开始使用
+### 第五步：验证部署
 
-部署完成后，访问：
+1. 打开 [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages**
+2. 点击 `fishblog`，右侧可以看到访问链接（形如 `https://fishblog.xxx.workers.dev`）
+3. 点击链接，看到博客首页即部署成功
 
 | 页面 | 地址 |
 |------|------|
@@ -95,7 +97,9 @@ GitHub Actions 会自动完成以下全部操作：
 | 管理后台 | `https://fishblog.<your-subdomain>.workers.dev/admin` |
 | RSS 订阅 | `https://fishblog.<your-subdomain>.workers.dev/feed.xml` |
 
-> `<your-subdomain>` 是你 Cloudflare 账号的 Workers 子域名，可在 Dashboard 中查看。
+> `<your-subdomain>` 是你的 Cloudflare Workers 子域名。查看方式：Cloudflare Dashboard → Workers & Pages → 右侧边栏的 **Subdomain**。
+
+> 首次访问时数据库表会自动创建，可能需要 1-2 秒加载。
 
 ### 绑定自定义域名（可选）
 
