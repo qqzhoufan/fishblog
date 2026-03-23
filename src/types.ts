@@ -3,7 +3,7 @@ export type Env = {
   BLOG_TITLE: string;
   BLOG_DESCRIPTION: string;
   ADMIN_USERNAME: string;
-  ADMIN_PASSWORD_HASH: string;
+  ADMIN_PASSWORD: string;
 };
 
 export type Post = {

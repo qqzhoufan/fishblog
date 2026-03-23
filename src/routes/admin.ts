@@ -16,13 +16,6 @@ import {
 
 const admin = new Hono<{ Bindings: Env }>();
 
-async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 admin.get("/login", (c) => {
   return c.html(loginPage());
 });
@@ -32,16 +25,14 @@ admin.post("/login", async (c) => {
   const username = (body.username as string) || "";
   const password = (body.password as string) || "";
 
-  const passwordHash = await sha256(password);
-
   if (
     username !== c.env.ADMIN_USERNAME ||
-    passwordHash !== c.env.ADMIN_PASSWORD_HASH
+    password !== c.env.ADMIN_PASSWORD
   ) {
     return c.html(loginPage("用户名或密码错误"), 401);
   }
 
-  const token = await generateToken(username, passwordHash);
+  const token = await generateToken(username, password);
   return new Response(null, {
     status: 302,
     headers: {
@@ -51,13 +42,12 @@ admin.post("/login", async (c) => {
   });
 });
 
-admin.get("/logout", (c) => {
+admin.get("/logout", () => {
   return new Response(null, {
     status: 302,
     headers: {
       Location: "/admin/login",
-      "Set-Cookie":
-        "fishblog_token=; Path=/; HttpOnly; Max-Age=0",
+      "Set-Cookie": "fishblog_token=; Path=/; HttpOnly; Max-Age=0",
     },
   });
 });

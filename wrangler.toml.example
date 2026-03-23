@@ -6,9 +6,10 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 BLOG_TITLE = "FishBlog"
 BLOG_DESCRIPTION = "A minimal blog on Cloudflare Workers"
-ADMIN_USERNAME = "admin"
-# Change this before deploying! Generate with: openssl rand -hex 32
-ADMIN_PASSWORD_HASH = ""
+
+# Secrets (set via Cloudflare Dashboard or `wrangler secret put`):
+#   ADMIN_USERNAME  - admin login username
+#   ADMIN_PASSWORD  - admin login password
 
 [[d1_databases]]
 binding = "DB"

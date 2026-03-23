@@ -1,7 +1,7 @@
 import type { Context, Next } from "hono";
 import type { Env } from "../types.ts";
 
-async function sha256(message: string): Promise<string> {
+export async function sha256(message: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(message);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -20,9 +20,9 @@ function parseCookie(header: string | undefined): Record<string, string> {
 
 export async function generateToken(
   username: string,
-  passwordHash: string
+  password: string
 ): Promise<string> {
-  const payload = `${username}:${passwordHash}:fishblog-secret`;
+  const payload = `fishblog:${username}:${await sha256(password)}`;
   return sha256(payload);
 }
 
@@ -33,7 +33,7 @@ export async function adminAuth(c: Context<{ Bindings: Env }>, next: Next) {
 
   const expected = await generateToken(
     c.env.ADMIN_USERNAME,
-    c.env.ADMIN_PASSWORD_HASH
+    c.env.ADMIN_PASSWORD
   );
   if (token !== expected) return c.redirect("/admin/login");
 
