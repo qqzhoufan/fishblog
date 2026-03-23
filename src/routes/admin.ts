@@ -4,12 +4,13 @@ import { sha256, adminAuth, generateToken } from "../middleware/auth.ts";
 import {
   loginPage, postListPage, postEditorPage,
   categoryListPage, categoryEditorPage,
-  apiKeyListPage, apiKeyNewPage,
+  apiKeyListPage, apiKeyNewPage, settingsPage,
 } from "../templates/admin.ts";
 import {
   getAllPosts, getPostById, createPost, updatePost, deletePost,
   getCategoryTree, getAllCategories, createCategory, updateCategory, deleteCategory,
   getAllApiKeys, createApiKey, deleteApiKey,
+  getConfig, setConfig,
 } from "../db/queries.ts";
 
 const admin = new Hono<{ Bindings: Env }>();
@@ -168,6 +169,32 @@ admin.post("/apikeys/new", async (c) => {
 admin.post("/apikeys/delete/:id", async (c) => {
   await deleteApiKey(c.env.DB, parseInt(c.req.param("id")));
   return c.redirect("/admin/apikeys");
+});
+
+// ── Settings ──
+
+admin.get("/settings", async (c) => {
+  const config = await getConfig(c.env.DB);
+  const saved = c.req.query("saved") === "1";
+  return c.html(settingsPage(config, saved));
+});
+
+admin.post("/settings", async (c) => {
+  const body = await c.req.parseBody();
+
+  await setConfig(c.env.DB, "blog_title", (body.blog_title as string) || "FishBlog");
+  await setConfig(c.env.DB, "blog_description", (body.blog_description as string) || "");
+  await setConfig(c.env.DB, "blog_footer", (body.blog_footer as string) || "Powered by FishBlog");
+
+  const faviconFile = body.favicon;
+  if (faviconFile && faviconFile instanceof File && faviconFile.size > 0) {
+    const buffer = await faviconFile.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    const dataUrl = `data:${faviconFile.type};base64,${base64}`;
+    await setConfig(c.env.DB, "favicon", dataUrl);
+  }
+
+  return c.redirect("/admin/settings?saved=1");
 });
 
 export default admin;

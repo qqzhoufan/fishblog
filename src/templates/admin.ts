@@ -94,6 +94,7 @@ export function adminLayout(title: string, content: string): string {
       <a href="/admin">文章</a>
       <a href="/admin/categories">分类</a>
       <a href="/admin/apikeys">API Keys</a>
+      <a href="/admin/settings">设置</a>
       <a href="/" target="_blank">查看博客</a>
       <a href="/admin/logout">退出</a>
     </nav>
@@ -345,5 +346,31 @@ export function apiKeyNewPage(): string {
         </div>
       </div>
       <div class="actions"><button type="submit" class="btn btn-primary">生成</button><a href="/admin/apikeys" class="btn">取消</a></div>
+    </form>`);
+}
+
+// ── Settings ──
+
+export function settingsPage(config: Record<string, string>, saved?: boolean): string {
+  const hasFavicon = !!config.favicon;
+
+  return adminLayout("站点设置", `
+    <h2 class="page-title">站点设置</h2>
+    ${saved ? '<div style="background:#052e16;color:#22c55e;padding:.6rem 1rem;border-radius:var(--radius);margin-bottom:1rem;font-size:.85rem">保存成功</div>' : ""}
+    <form method="POST" action="/admin/settings" enctype="multipart/form-data">
+      <div class="form-row">
+        <div class="form-group"><label>博客标题</label><input type="text" name="blog_title" value="${escapeHtml(config.blog_title || "FishBlog")}"></div>
+        <div class="form-group"><label>博客描述</label><input type="text" name="blog_description" value="${escapeHtml(config.blog_description || "")}"></div>
+      </div>
+      <div class="form-group"><label>底部文字</label><input type="text" name="blog_footer" value="${escapeHtml(config.blog_footer || "Powered by FishBlog")}"></div>
+      <div class="form-group">
+        <label>站点图标（Favicon）</label>
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.5rem">
+          ${hasFavicon ? '<img src="/favicon.ico" style="width:32px;height:32px;border-radius:4px;border:1px solid var(--border)">' : '<span style="color:var(--muted);font-size:.85rem">未设置</span>'}
+        </div>
+        <input type="file" name="favicon" accept="image/png,image/x-icon,image/svg+xml,image/jpeg,image/webp" style="font-size:.85rem">
+        <p style="font-size:.75rem;color:var(--muted);margin-top:.3rem">支持 PNG、ICO、SVG、JPG，建议 64x64 以内</p>
+      </div>
+      <button type="submit" class="btn btn-primary">保存设置</button>
     </form>`);
 }

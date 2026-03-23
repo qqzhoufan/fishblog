@@ -239,3 +239,15 @@ export async function getConfig(db: D1Database): Promise<Record<string, string>>
   }
   return config;
 }
+
+export async function setConfig(db: D1Database, key: string, value: string): Promise<void> {
+  await db
+    .prepare("INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?")
+    .bind(key, value, value)
+    .run();
+}
+
+export async function getFavicon(db: D1Database): Promise<string | null> {
+  const row = await db.prepare("SELECT value FROM config WHERE key = 'favicon'").first<{ value: string }>();
+  return row?.value ?? null;
+}

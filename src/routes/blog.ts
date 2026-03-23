@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { marked } from "marked";
 import type { Env } from "../types.ts";
 import { layout, escapeHtml } from "../templates/layout.ts";
-import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts } from "../db/queries.ts";
+import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon } from "../db/queries.ts";
 
 const blog = new Hono<{ Bindings: Env }>();
 
@@ -186,6 +186,16 @@ blog.get("/feed.xml", async (c) => {
 </rss>`;
 
   return c.text(rss, 200, { "Content-Type": "application/xml" });
+});
+
+blog.get("/favicon.ico", async (c) => {
+  const data = await getFavicon(c.env.DB);
+  if (!data) return c.body(null, 404);
+  const [meta, base64] = data.split(",");
+  const mimeMatch = meta?.match(/data:([^;]+)/);
+  const mime = mimeMatch?.[1] || "image/x-icon";
+  const binary = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
+  return new Response(binary, { headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" } });
 });
 
 export default blog;
