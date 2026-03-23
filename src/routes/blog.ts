@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { marked } from "marked";
 import type { Env } from "../types.ts";
 import { layout, escapeHtml } from "../templates/layout.ts";
-import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon } from "../db/queries.ts";
+import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon, getTagsForPost, getPostsByTag, getAllTags } from "../db/queries.ts";
 
 const blog = new Hono<{ Bindings: Env }>();
 
@@ -103,6 +103,11 @@ blog.get("/post/:slug", async (c) => {
     return c.html(layout("404", '<p style="text-align:center;padding:3rem">文章不存在</p>', config, { categories }), 404);
   }
 
+  const tags = await getTagsForPost(c.env.DB, post.id);
+  const tagsHtml = tags.length
+    ? `<span class="tag-list">${tags.map((t) => `<a href="/tag/${encodeURIComponent(t.name)}" class="tag-link">#${escapeHtml(t.name)}</a>`).join(" ")}</span>`
+    : "";
+
   const html = await marked(post.content);
   const content = `<article class="article">
     <a href="/" class="back-link">&larr; 返回首页</a>
@@ -110,11 +115,51 @@ blog.get("/post/:slug", async (c) => {
     <div class="meta">
       <span>${post.created_at.slice(0, 10)}</span>
       ${post.category_name ? `<a href="/?cat=${post.category_id}" class="cat-tag">${escapeHtml(post.category_name)}</a>` : ""}
+      ${tagsHtml}
     </div>
     <div class="content">${html}</div>
   </article>`;
 
   return c.html(layout(post.title, content, config, { categories }));
+});
+
+blog.get("/tag/:name", async (c) => {
+  const tagName = decodeURIComponent(c.req.param("name"));
+  const page = parseInt(c.req.query("page") || "1");
+
+  const [{ posts, total }, config, categories] = await Promise.all([
+    getPostsByTag(c.env.DB, tagName, page),
+    getConfig(c.env.DB),
+    getCategoryTree(c.env.DB),
+  ]);
+
+  const totalPages = Math.ceil(total / 10);
+  const postItems = posts
+    .map(
+      (p) => `<li class="post-item">
+        <h2><a href="/post/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a></h2>
+        <div class="post-meta">
+          <span>${p.created_at.slice(0, 10)}</span>
+          ${p.category_name ? `<span class="cat-tag">${escapeHtml(p.category_name)}</span>` : ""}
+        </div>
+        ${p.excerpt ? `<p class="post-excerpt">${escapeHtml(p.excerpt)}</p>` : ""}
+      </li>`
+    )
+    .join("");
+
+  const pagination =
+    totalPages > 1
+      ? `<div class="pagination">
+          ${page > 1 ? `<a href="/tag/${encodeURIComponent(tagName)}?page=${page - 1}">&larr; 上一页</a>` : ""}
+          ${page < totalPages ? `<a href="/tag/${encodeURIComponent(tagName)}?page=${page + 1}">下一页 &rarr;</a>` : ""}
+        </div>`
+      : "";
+
+  const content = posts.length
+    ? `<h2 class="search-results-title">标签 <span>#${escapeHtml(tagName)}</span> 共 ${total} 篇</h2><ul class="post-list">${postItems}</ul>${pagination}`
+    : `<h2 class="search-results-title">标签 <span>#${escapeHtml(tagName)}</span></h2><p style="text-align:center;color:var(--muted);padding:2rem 0">暂无文章</p>`;
+
+  return c.html(layout(`#${tagName}`, content, config, { categories }));
 });
 
 blog.get("/archive", async (c) => {

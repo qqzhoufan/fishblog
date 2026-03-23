@@ -170,7 +170,7 @@ export function postListPage(posts: Post[]): string {
     </table>`);
 }
 
-export function postEditorPage(post?: Post, categories: Category[] = []): string {
+export function postEditorPage(post?: Post, categories: Category[] = [], tags: string[] = []): string {
   const isEdit = !!post;
   const action = isEdit ? `/admin/edit/${post!.id}` : "/admin/new";
 
@@ -198,6 +198,10 @@ export function postEditorPage(post?: Post, categories: Category[] = []): string
         <div class="form-group"><label>分类</label>
           <select name="category_id"><option value="">无分类</option>${catOptions}</select>
         </div>
+      </div>
+      <div class="form-group">
+        <label>标签（用逗号分隔，可留空）</label>
+        <input type="text" name="tags" value="${escapeHtml(tags.join(", "))}" placeholder="例如：技术, Cloudflare, 教程">
       </div>
       <div class="form-group"><label>正文（Markdown）</label><textarea name="content">${escapeHtml(post?.content || "")}</textarea></div>
       <div class="form-row" style="align-items:end">

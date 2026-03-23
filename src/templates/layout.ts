@@ -130,6 +130,13 @@ export function layout(
 
     .search-results-title { font-size: 1.2rem; margin-bottom: 1rem; }
     .search-results-title span { color: var(--accent); }
+
+    .tag-list { display: inline-flex; gap: .4rem; flex-wrap: wrap; }
+    .tag-link {
+      font-size: .75rem; color: var(--accent); background: var(--surface); border: 1px solid var(--border);
+      padding: .1rem .45rem; border-radius: 4px; font-family: var(--font-sans); transition: all .15s;
+    }
+    .tag-link:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">

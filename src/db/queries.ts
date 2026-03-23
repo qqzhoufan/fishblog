@@ -229,6 +229,54 @@ export async function touchApiKey(db: D1Database, id: number): Promise<void> {
   await db.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").bind(id).run();
 }
 
+// ── Tags ──
+
+export type Tag = { id: number; name: string; post_count?: number };
+
+export async function getAllTags(db: D1Database): Promise<Tag[]> {
+  const result = await db
+    .prepare("SELECT t.*, COUNT(pt.post_id) as post_count FROM tags t LEFT JOIN post_tags pt ON t.id = pt.tag_id GROUP BY t.id ORDER BY t.name")
+    .all<Tag>();
+  return result.results;
+}
+
+export async function getTagsForPost(db: D1Database, postId: number): Promise<Tag[]> {
+  const result = await db
+    .prepare("SELECT t.* FROM tags t JOIN post_tags pt ON t.id = pt.tag_id WHERE pt.post_id = ?")
+    .bind(postId)
+    .all<Tag>();
+  return result.results;
+}
+
+export async function syncPostTags(db: D1Database, postId: number, tagNames: string[]): Promise<void> {
+  await db.prepare("DELETE FROM post_tags WHERE post_id = ?").bind(postId).run();
+
+  for (const name of tagNames) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    await db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)").bind(trimmed).run();
+    const tag = await db.prepare("SELECT id FROM tags WHERE name = ?").bind(trimmed).first<{ id: number }>();
+    if (tag) {
+      await db.prepare("INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?, ?)").bind(postId, tag.id).run();
+    }
+  }
+}
+
+export async function getPostsByTag(
+  db: D1Database, tagName: string, page = 1, pageSize = 10
+): Promise<{ posts: Post[]; total: number }> {
+  const offset = (page - 1) * pageSize;
+  const [posts, countResult] = await Promise.all([
+    db.prepare(
+      "SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id JOIN post_tags pt ON p.id = pt.post_id JOIN tags t ON pt.tag_id = t.id WHERE p.published = 1 AND t.name = ? ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+    ).bind(tagName, pageSize, offset).all<Post>(),
+    db.prepare(
+      "SELECT COUNT(*) as count FROM posts p JOIN post_tags pt ON p.id = pt.post_id JOIN tags t ON pt.tag_id = t.id WHERE p.published = 1 AND t.name = ?"
+    ).bind(tagName).first<{ count: number }>(),
+  ]);
+  return { posts: posts.results, total: countResult?.count ?? 0 };
+}
+
 // ── Config ──
 
 export async function getConfig(db: D1Database): Promise<Record<string, string>> {

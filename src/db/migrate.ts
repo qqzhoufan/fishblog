@@ -1,7 +1,7 @@
 export async function autoMigrate(db: D1Database): Promise<void> {
   // Check if migration is needed by testing the newest table
   try {
-    await db.prepare("SELECT 1 FROM api_keys LIMIT 1").first();
+    await db.prepare("SELECT 1 FROM post_tags LIMIT 1").first();
     return; // all tables exist, skip
   } catch {
     // need migration
@@ -53,6 +53,19 @@ export async function autoMigrate(db: D1Database): Promise<void> {
     `INSERT OR IGNORE INTO config (key, value) VALUES ('blog_title', 'FishBlog')`,
     `INSERT OR IGNORE INTO config (key, value) VALUES ('blog_description', 'A minimal blog powered by Cloudflare Workers')`,
     `INSERT OR IGNORE INTO config (key, value) VALUES ('blog_footer', 'Powered by FishBlog')`,
+
+    // Tags (many-to-many with posts)
+    `CREATE TABLE IF NOT EXISTS tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS post_tags (
+      post_id INTEGER NOT NULL,
+      tag_id INTEGER NOT NULL,
+      PRIMARY KEY (post_id, tag_id),
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+      FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+    )`,
   ];
 
   for (const sql of migrations) {

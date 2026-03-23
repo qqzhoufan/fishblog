@@ -5,6 +5,7 @@ import {
   getPublishedPosts, getAllPosts, getPostBySlug, getPostById,
   createPost, updatePost, deletePost,
   getCategoryTree, getApiKeyByHash, touchApiKey,
+  getTagsForPost, syncPostTags,
 } from "../db/queries.ts";
 
 const api = new Hono<{ Bindings: Env }>();
@@ -65,7 +66,8 @@ api.get("/posts/:slug", async (c) => {
 
   const post = await getPostBySlug(c.env.DB, c.req.param("slug"));
   if (!post) return err("Post not found", 404);
-  return c.json(post);
+  const tags = await getTagsForPost(c.env.DB, post.id);
+  return c.json({ ...post, tags: tags.map((t) => t.name) });
 });
 
 api.post("/posts", async (c) => {
@@ -74,12 +76,12 @@ api.post("/posts", async (c) => {
 
   const body = await c.req.json<{
     title: string; slug: string; content: string;
-    excerpt?: string; published?: number; category_id?: number | null;
+    excerpt?: string; published?: number; category_id?: number | null; tags?: string[];
   }>();
 
   if (!body.title || !body.slug) return err("title and slug are required", 400);
 
-  await createPost(c.env.DB, {
+  const result = await createPost(c.env.DB, {
     title: body.title,
     slug: body.slug,
     content: body.content || "",
@@ -88,8 +90,11 @@ api.post("/posts", async (c) => {
     category_id: body.category_id ?? null,
   });
 
+  const postId = result.meta.last_row_id;
+  if (postId && body.tags) await syncPostTags(c.env.DB, postId, body.tags);
+
   const post = await getPostBySlug(c.env.DB, body.slug);
-  return c.json({ success: true, post }, 201);
+  return c.json({ success: true, post, tags: body.tags || [] }, 201);
 });
 
 api.put("/posts/:id", async (c) => {
@@ -102,8 +107,10 @@ api.put("/posts/:id", async (c) => {
 
   const body = await c.req.json<{
     title?: string; slug?: string; content?: string;
-    excerpt?: string; published?: number; category_id?: number | null;
+    excerpt?: string; published?: number; category_id?: number | null; tags?: string[];
   }>();
+
+  if (body.tags) await syncPostTags(c.env.DB, id, body.tags);
 
   await updatePost(c.env.DB, id, {
     title: body.title,

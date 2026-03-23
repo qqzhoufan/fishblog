@@ -11,6 +11,7 @@ import {
   getCategoryTree, getAllCategories, createCategory, updateCategory, deleteCategory,
   getAllApiKeys, createApiKey, deleteApiKey,
   getConfig, setConfig,
+  getTagsForPost, syncPostTags,
 } from "../db/queries.ts";
 
 const admin = new Hono<{ Bindings: Env }>();
@@ -59,22 +60,30 @@ admin.get("/new", async (c) => {
   return c.html(postEditorPage(undefined, categories));
 });
 
+function parseTags(raw: string): string[] {
+  return (raw || "").split(",").map((t) => t.trim()).filter(Boolean);
+}
+
 admin.post("/new", async (c) => {
   const body = await c.req.parseBody();
   const catId = body.category_id ? parseInt(body.category_id as string) : null;
-  await createPost(c.env.DB, {
+  const result = await createPost(c.env.DB, {
     title: body.title as string, slug: body.slug as string,
     content: body.content as string, excerpt: (body.excerpt as string) || "",
     published: parseInt(body.published as string) || 0, category_id: catId,
   });
+  const postId = result.meta.last_row_id;
+  if (postId) await syncPostTags(c.env.DB, postId, parseTags(body.tags as string));
   return c.redirect("/admin");
 });
 
 admin.get("/edit/:id", async (c) => {
   const id = parseInt(c.req.param("id"));
-  const [post, categories] = await Promise.all([getPostById(c.env.DB, id), getCategoryTree(c.env.DB)]);
+  const [post, categories, tags] = await Promise.all([
+    getPostById(c.env.DB, id), getCategoryTree(c.env.DB), getTagsForPost(c.env.DB, id),
+  ]);
   if (!post) return c.text("Post not found", 404);
-  return c.html(postEditorPage(post, categories));
+  return c.html(postEditorPage(post, categories, tags.map((t) => t.name)));
 });
 
 admin.post("/edit/:id", async (c) => {
@@ -86,6 +95,7 @@ admin.post("/edit/:id", async (c) => {
     content: body.content as string, excerpt: (body.excerpt as string) || "",
     published: parseInt(body.published as string) || 0, category_id: catId,
   });
+  await syncPostTags(c.env.DB, id, parseTags(body.tags as string));
   return c.redirect("/admin");
 });
 
