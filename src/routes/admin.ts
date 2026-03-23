@@ -107,10 +107,19 @@ admin.get("/categories/new", async (c) => {
   return c.html(categoryEditorPage(undefined, roots));
 });
 
+function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+    .replace(/^-|-$/g, "")
+    || `cat-${Date.now()}`;
+}
+
 admin.post("/categories/new", async (c) => {
   const body = await c.req.parseBody();
+  const name = body.name as string;
   await createCategory(c.env.DB, {
-    name: body.name as string, slug: body.slug as string,
+    name, slug: generateSlug(name),
     parent_id: body.parent_id ? parseInt(body.parent_id as string) : null,
     sort_order: parseInt(body.sort_order as string) || 0,
   });
@@ -129,8 +138,9 @@ admin.get("/categories/edit/:id", async (c) => {
 admin.post("/categories/edit/:id", async (c) => {
   const id = parseInt(c.req.param("id"));
   const body = await c.req.parseBody();
+  const name = body.name as string;
   await updateCategory(c.env.DB, id, {
-    name: body.name as string, slug: body.slug as string,
+    name, slug: generateSlug(name),
     parent_id: body.parent_id ? parseInt(body.parent_id as string) : null,
     sort_order: parseInt(body.sort_order as string) || 0,
   });

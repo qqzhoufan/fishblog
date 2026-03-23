@@ -265,10 +265,7 @@ export function categoryEditorPage(category?: Category & { id?: number }, parent
   return adminLayout(isEdit ? "编辑分类" : "新建分类", `
     <h2 class="page-title">${isEdit ? "编辑分类" : "新建分类"}</h2>
     <form method="POST" action="${action}">
-      <div class="form-row">
-        <div class="form-group"><label>分类名称</label><input type="text" name="name" value="${escapeHtml(category?.name || "")}" required></div>
-        <div class="form-group"><label>Slug</label><input type="text" name="slug" value="${escapeHtml(category?.slug || "")}" required pattern="[a-z0-9\\-]+"></div>
-      </div>
+      <div class="form-group"><label>分类名称</label><input type="text" name="name" value="${escapeHtml(category?.name || "")}" required></div>
       <div class="form-row">
         <div class="form-group"><label>上级分类</label>
           <select name="parent_id"><option value="">无（一级分类）</option>${parentOptions}</select>
