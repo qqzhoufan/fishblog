@@ -172,9 +172,9 @@ admin.get("/apikeys", async (c) => {
 admin.get("/apikeys/new", (c) => c.html(apiKeyNewPage()));
 
 admin.post("/apikeys/new", async (c) => {
-  const body = await c.req.parseBody();
-  const name = body.name as string;
-  const perms = Array.isArray(body.perm) ? (body.perm as string[]) : [body.perm as string];
+  const form = await c.req.formData();
+  const name = form.get("name") as string;
+  const perms = form.getAll("perm") as string[];
   const permissions = perms.filter(Boolean).join(",");
 
   const rawKey = `fb_${crypto.randomUUID().replace(/-/g, "")}`;
