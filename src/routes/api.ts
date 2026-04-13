@@ -4,7 +4,8 @@ import { sha256 } from "../middleware/auth.ts";
 import {
   getPublishedPosts, getAllPosts, getPostBySlug, getPostById,
   createPost, updatePost, deletePost,
-  getCategoryTree, getApiKeyByHash, touchApiKey,
+  getCategoryTree, getAllCategories, createCategory, updateCategory, deleteCategory,
+  getApiKeyByHash, touchApiKey,
   getTagsForPost, syncPostTags,
 } from "../db/queries.ts";
 
@@ -86,7 +87,7 @@ api.post("/posts", async (c) => {
     slug: body.slug,
     content: body.content || "",
     excerpt: body.excerpt || "",
-    published: body.published ?? 0,
+    published: body.published ?? 1,
     category_id: body.category_id ?? null,
   });
 
@@ -142,6 +143,56 @@ api.get("/categories", async (c) => {
   if (!hasPermission(key, "read")) return err("No read permission", 403);
   const categories = await getCategoryTree(c.env.DB);
   return c.json({ categories });
+});
+
+api.post("/categories", async (c) => {
+  const key = c.get("apiKey" as never) as ApiKeyInfo;
+  if (!hasPermission(key, "create")) return err("No create permission", 403);
+
+  const body = await c.req.json<{ name: string; slug?: string; parent_id?: number | null; sort_order?: number }>();
+  if (!body.name) return err("name is required", 400);
+
+  const slug = body.slug || body.name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-").replace(/^-|-$/g, "") || `cat-${Date.now()}`;
+  await createCategory(c.env.DB, {
+    name: body.name,
+    slug,
+    parent_id: body.parent_id ?? null,
+    sort_order: body.sort_order ?? 0,
+  });
+  const categories = await getCategoryTree(c.env.DB);
+  return c.json({ success: true, categories }, 201);
+});
+
+api.put("/categories/:id", async (c) => {
+  const key = c.get("apiKey" as never) as ApiKeyInfo;
+  if (!hasPermission(key, "update")) return err("No update permission", 403);
+
+  const id = parseInt(c.req.param("id"));
+  const all = await getAllCategories(c.env.DB);
+  if (!all.find((cat) => cat.id === id)) return err("Category not found", 404);
+
+  const body = await c.req.json<{ name?: string; slug?: string; parent_id?: number | null; sort_order?: number }>();
+  const slug = body.slug || (body.name ? body.name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-").replace(/^-|-$/g, "") : undefined);
+  await updateCategory(c.env.DB, id, {
+    name: body.name,
+    slug,
+    parent_id: body.parent_id,
+    sort_order: body.sort_order,
+  });
+  const categories = await getCategoryTree(c.env.DB);
+  return c.json({ success: true, categories });
+});
+
+api.delete("/categories/:id", async (c) => {
+  const key = c.get("apiKey" as never) as ApiKeyInfo;
+  if (!hasPermission(key, "delete")) return err("No delete permission", 403);
+
+  const id = parseInt(c.req.param("id"));
+  const all = await getAllCategories(c.env.DB);
+  if (!all.find((cat) => cat.id === id)) return err("Category not found", 404);
+
+  await deleteCategory(c.env.DB, id);
+  return c.json({ success: true });
 });
 
 export default api;
