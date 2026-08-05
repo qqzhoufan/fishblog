@@ -14,12 +14,16 @@
 | | 功能 | 说明 |
 |---|------|------|
 | 📝 | **Markdown 写作** | 内置管理后台，Markdown 编辑、实时发布 |
+| 📌 | **文章置顶** | 后台一键置顶，首页优先展示 |
+| 💬 | **游客评论** | 无需注册即可评论，内置反垃圾机制，后台可管理 |
+| 👁️ | **浏览量统计** | 自动记录并展示每篇文章阅读量 |
 | 🏷️ | **分类 & 标签** | 两级分类体系 + 自由标签，首页侧边栏按分类筛选 |
 | 🔍 | **全文搜索** | 按标题、正文、摘要模糊搜索 |
 | 🎨 | **主题自适应** | 深色/浅色模式跟随系统自动切换 |
 | 🔐 | **安全认证** | 管理员密码通过 Cloudflare Secrets 加密管理 |
 | 🔑 | **REST API** | 内置 API Key 系统，细粒度权限控制，可接入外部工具自动发文 |
 | 📡 | **RSS 订阅** | 内置 `/feed.xml` |
+| 🔎 | **SEO 优化** | 自动生成 `sitemap.xml`、`robots.txt`、canonical 与 OG 标签 |
 | 🖼️ | **自定义图标** | 后台上传 Favicon，即时生效 |
 | ⚙️ | **站点设置** | 后台可视化修改博客标题、描述、底部文字 |
 | 📦 | **零配置** | D1 数据库自动创建，表结构首次访问自动初始化 |
@@ -103,10 +107,30 @@ GitHub Actions 会自动完成以下全部操作：
 | 博客首页 | `https://fishblog.<your-subdomain>.workers.dev` |
 | 管理后台 | `https://fishblog.<your-subdomain>.workers.dev/admin` |
 | RSS 订阅 | `https://fishblog.<your-subdomain>.workers.dev/feed.xml` |
+| 站点地图 | `https://fishblog.<your-subdomain>.workers.dev/sitemap.xml` |
 
 > `<your-subdomain>` 是你的 Cloudflare Workers 子域名。查看方式：Cloudflare Dashboard → Workers & Pages → 右侧边栏的 **Subdomain**。
 
 > 首次访问时数据库表会自动创建，可能需要 1-2 秒加载。
+
+### 第六步：让搜索引擎尽快收录（推荐）
+
+部署完成后建议尽快向搜索引擎提交站点。本项目已自动生成 `/sitemap.xml` 和 `/robots.txt`，以下平台均可直接提交 sitemap 加快收录：
+
+| 平台 | 地址 | 特点 |
+|------|------|------|
+| **Bing Webmaster Tools** | https://www.bing.com/webmasters | 免费、收录最快（几天内），且数据可与 Google 互通 |
+| **Google Search Console** | https://search.google.com/search-console | 收录稳定，可查看搜索表现 |
+| **百度搜索资源平台** | https://ziyuan.baidu.com | 国内流量关键，建议同时做"普通收录-手动提交"推送新文章 URL |
+
+**操作要点：**
+
+1. **优先绑定自定义域名**（如 `blog.example.com`），`.workers.dev` 子域名会被搜索引擎降低权重。绑定方法见下方"绑定自定义域名"。
+2. 在各平台添加站点后，验证所有权（推荐 DNS 验证，无需改代码），然后提交 `https://你的域名/sitemap.xml`。
+3. **每次发新文章后**，在百度站长"普通收录-手动提交"里粘贴新文章 URL，可显著加快收录；或把该接口接入自动发文流程。
+4. 国内服务器不可用不影响收录，Cloudflare 边缘节点全球可达，但百度爬虫可能需要更长时间，耐心等待 1-4 周。
+
+> 提示：首页 `<head>` 已包含 canonical、OG 标签和 meta description，文章页 description 自动取摘要，SEO 基础工作已完成。
 
 ### 绑定自定义域名（可选）
 
@@ -125,6 +149,12 @@ GitHub Actions 会自动完成以下全部操作：
 4. 选择分类（可选），填写标签（逗号分隔，如 `技术, Cloudflare, 教程`，可留空）
 5. 填写摘要（可选），在正文区域用 Markdown 写作
 6. 选择 **发布** 或 **草稿**，点击 **保存**
+
+> 勾选 **置顶** 后文章会在首页优先展示（置顶徽章标识）。
+
+### 评论管理
+
+读者无需注册即可在文章下方评论（昵称 + 内容）。内置反垃圾机制：隐藏蜜罐字段 + 提交时间校验。进入后台 → **评论** 可查看和删除评论。
 
 ### 分类管理
 
@@ -157,8 +187,9 @@ GitHub Actions 会自动完成以下全部操作：
 |------|------|------|------|
 | `GET` | `/api/posts` | read | 获取文章列表（支持 `?page=` `?category_id=` `?all=true`） |
 | `GET` | `/api/posts/:slug` | read | 获取单篇文章（含标签） |
-| `POST` | `/api/posts` | create | 创建文章 |
-| `PUT` | `/api/posts/:id` | update | 更新文章 |
+| `GET` | `/api/posts/:slug/comments` | read | 获取文章评论列表 |
+| `POST` | `/api/posts` | create | 创建文章（支持 `is_pinned` 置顶） |
+| `PUT` | `/api/posts/:id` | update | 更新文章（支持 `is_pinned`） |
 | `DELETE` | `/api/posts/:id` | delete | 删除文章 |
 | `GET` | `/api/categories` | read | 获取分类树 |
 

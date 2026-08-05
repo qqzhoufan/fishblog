@@ -14,9 +14,20 @@ export type Post = {
   excerpt: string;
   category_id: number | null;
   published: number;
+  is_pinned: number;
+  views: number;
   created_at: string;
   updated_at: string;
   category_name?: string;
+  comment_count?: number;
+};
+
+export type Comment = {
+  id: number;
+  post_id: number;
+  author: string;
+  content: string;
+  created_at: string;
 };
 
 export type Category = {

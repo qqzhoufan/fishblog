@@ -7,6 +7,7 @@ import {
   getCategoryTree, getAllCategories, createCategory, updateCategory, deleteCategory,
   getApiKeyByHash, touchApiKey,
   getTagsForPost, syncPostTags,
+  getCommentsForPost,
 } from "../db/queries.ts";
 
 const api = new Hono<{ Bindings: Env }>();
@@ -71,13 +72,23 @@ api.get("/posts/:slug", async (c) => {
   return c.json({ ...post, tags: tags.map((t) => t.name) });
 });
 
+api.get("/posts/:slug/comments", async (c) => {
+  const key = c.get("apiKey" as never) as ApiKeyInfo;
+  if (!hasPermission(key, "read")) return err("No read permission", 403);
+
+  const post = await getPostBySlug(c.env.DB, c.req.param("slug"));
+  if (!post) return err("Post not found", 404);
+  const comments = await getCommentsForPost(c.env.DB, post.id);
+  return c.json({ comments });
+});
+
 api.post("/posts", async (c) => {
   const key = c.get("apiKey" as never) as ApiKeyInfo;
   if (!hasPermission(key, "create")) return err("No create permission", 403);
 
   const body = await c.req.json<{
     title: string; slug: string; content: string;
-    excerpt?: string; published?: number; category_id?: number | null; tags?: string[];
+    excerpt?: string; published?: number; category_id?: number | null; tags?: string[]; is_pinned?: number;
   }>();
 
   if (!body.title || !body.slug) return err("title and slug are required", 400);
@@ -89,6 +100,7 @@ api.post("/posts", async (c) => {
     excerpt: body.excerpt || "",
     published: body.published ?? 1,
     category_id: body.category_id ?? null,
+    is_pinned: body.is_pinned ?? 0,
   });
 
   const postId = result.meta.last_row_id;
@@ -108,7 +120,7 @@ api.put("/posts/:id", async (c) => {
 
   const body = await c.req.json<{
     title?: string; slug?: string; content?: string;
-    excerpt?: string; published?: number; category_id?: number | null; tags?: string[];
+    excerpt?: string; published?: number; category_id?: number | null; tags?: string[]; is_pinned?: number;
   }>();
 
   if (body.tags) await syncPostTags(c.env.DB, id, body.tags);
@@ -120,6 +132,7 @@ api.put("/posts/:id", async (c) => {
     excerpt: body.excerpt,
     published: body.published,
     category_id: body.category_id,
+    is_pinned: body.is_pinned,
   });
 
   const post = await getPostById(c.env.DB, id);
