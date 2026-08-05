@@ -1,4 +1,4 @@
-import { escapeHtml } from "./layout.ts";
+import { escapeHtml, formatDate } from "./layout.ts";
 import type { Post, Category, ApiKey, Comment } from "../types.ts";
 import type { CommentWithPost } from "../db/queries.ts";
 
@@ -154,7 +154,7 @@ export function postListPage(posts: Post[]): string {
       <td>${p.published ? '<span class="badge badge-pub">已发布</span>' : '<span class="badge badge-draft">草稿</span>'}</td>
       <td>${p.views ?? 0}</td>
       <td>${p.comment_count ?? 0}</td>
-      <td>${p.created_at.slice(0, 10)}</td>
+      <td>${formatDate(p.created_at)}</td>
       <td>
         <div class="actions">
           <a href="/admin/edit/${p.id}" class="btn btn-sm">编辑</a>
@@ -311,8 +311,8 @@ export function apiKeyListPage(apiKeys: ApiKey[], newKey?: string): string {
         <td>${escapeHtml(k.name)}</td>
         <td><code>${k.key_hash.slice(0, 12)}...</code></td>
         <td><div class="perm-badges">${perms}</div></td>
-        <td>${k.last_used_at ? k.last_used_at.slice(0, 10) : '从未'}</td>
-        <td>${k.created_at.slice(0, 10)}</td>
+        <td>${k.last_used_at ? formatDate(k.last_used_at) : '从未'}</td>
+        <td>${formatDate(k.created_at)}</td>
         <td>
           <form method="POST" action="/admin/apikeys/delete/${k.id}" onsubmit="return confirm('确定吊销此 Key？')">
             <button type="submit" class="btn btn-sm btn-danger">吊销</button>
@@ -401,7 +401,7 @@ export function commentListPage(comments: CommentWithPost[]): string {
       <td>${escapeHtml(cm.author)}</td>
       <td>${escapeHtml(cm.content.length > 80 ? cm.content.slice(0, 80) + "…" : cm.content)}</td>
       <td>${cm.post_title ? `<a href="/post/${escapeHtml(cm.post_slug)}" target="_blank">${escapeHtml(cm.post_title)}</a>` : `<span style="color:var(--muted)">已删除</span>`}</td>
-      <td>${cm.created_at.slice(0, 16)}</td>
+      <td>${formatDate(cm.created_at, true)}</td>
       <td>
         <form method="POST" action="/admin/comments/delete/${cm.id}" onsubmit="return confirm('确定删除此评论？')">
           <button type="submit" class="btn btn-sm btn-danger">删除</button>
