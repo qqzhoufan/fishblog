@@ -198,7 +198,7 @@ export function layout(
     <div class="main-content">${content}</div>
     ${sidebar}
   </div>
-  <footer><a href="https://github.com/qqzhoufan/fishblog" target="_blank">Powered by FishBlog</a></footer>
+  <footer>${escapeHtml(config.blog_footer || "Powered by FishBlog")}</footer>
   <script>
     var el = document.getElementById('ct-ts');
     if (el) el.value = Date.now().toString();
