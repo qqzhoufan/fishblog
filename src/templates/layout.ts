@@ -4,11 +4,13 @@ export function layout(
   title: string,
   content: string,
   config: Record<string, string> = {},
-  options: { categories?: Category[]; currentCategory?: string } = {}
+  options: { categories?: Category[]; currentCategory?: string; description?: string; canonical?: string } = {}
 ): string {
   const blogTitle = config.blog_title || "FishBlog";
   const blogDesc = config.blog_description || "";
+  const pageDesc = options.description || blogDesc;
   const { categories, currentCategory } = options;
+  const canonical = options.canonical;
 
   const sidebar = categories ? buildSidebar(categories, currentCategory) : "";
   const hasSidebar = !!categories;
@@ -19,7 +21,12 @@ export function layout(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)} - ${escapeHtml(blogTitle)}</title>
-  <meta name="description" content="${escapeHtml(blogDesc)}">
+  <meta name="description" content="${escapeHtml(pageDesc)}">
+  <link rel="canonical" href="${escapeHtml(canonical || "")}">
+  <link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+  <meta property="og:site_name" content="${escapeHtml(blogTitle)}">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(pageDesc)}">
   <link rel="icon" href="/favicon.ico">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -137,6 +144,37 @@ export function layout(
       padding: .1rem .45rem; border-radius: 4px; font-family: var(--font-sans); transition: all .15s;
     }
     .tag-link:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .pin-badge {
+      display: inline-block; background: var(--accent); color: #fff; font-size: .7rem; font-weight: 600;
+      padding: .1rem .45rem; border-radius: 4px; vertical-align: .15em; font-family: var(--font-sans);
+    }
+
+    .comments { margin-top: 3rem; font-family: var(--font-sans); }
+    .comments h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+    .comment-list { list-style: none; }
+    .comment-item {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: .9rem 1rem; margin-bottom: .75rem;
+    }
+    .comment-head { display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); margin-bottom: .35rem; }
+    .comment-head strong { color: var(--fg); }
+    .comment-item p { font-size: .95rem; line-height: 1.65; word-break: break-word; }
+    .comment-empty { color: var(--muted); font-size: .9rem; margin-bottom: 1.25rem; }
+    .comment-closed { margin-top: 3rem; color: var(--muted); font-size: .9rem; text-align: center; padding: 2rem 0; border-top: 1px solid var(--border); font-family: var(--font-sans); }
+    .comment-form { display: flex; flex-direction: column; gap: .6rem; max-width: 480px; }
+    .comment-form input, .comment-form textarea {
+      padding: .5rem .8rem; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font-family: inherit; font-size: .9rem;
+    }
+    .comment-form input:focus, .comment-form textarea:focus { outline: none; border-color: var(--accent); }
+    .comment-form textarea { min-height: 100px; resize: vertical; }
+    .comment-form button {
+      align-self: flex-start; padding: .45rem 1.25rem; border: none; border-radius: var(--radius);
+      background: var(--accent); color: #fff; font-size: .9rem; cursor: pointer; font-weight: 600;
+    }
+    .comment-form button:hover { background: var(--accent-hover); }
+    .hp-field { position: absolute; left: -9999px; opacity: 0; height: 0; width: 0; }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
@@ -161,6 +199,10 @@ export function layout(
     ${sidebar}
   </div>
   <footer><a href="https://github.com/qqzhoufan/fishblog" target="_blank">Powered by FishBlog</a></footer>
+  <script>
+    var el = document.getElementById('ct-ts');
+    if (el) el.value = Date.now().toString();
+  </script>
 </body>
 </html>`;
 }

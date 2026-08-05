@@ -2,9 +2,22 @@ import { Hono } from "hono";
 import { marked } from "marked";
 import type { Env } from "../types.ts";
 import { layout, escapeHtml } from "../templates/layout.ts";
-import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon, getTagsForPost, getPostsByTag, getAllTags } from "../db/queries.ts";
+import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon, getTagsForPost, getPostsByTag, getAllTags, incrementPostViews, getCommentsForPost, createComment } from "../db/queries.ts";
+import type { Post } from "../types.ts";
 
 const blog = new Hono<{ Bindings: Env }>();
+
+function postListItem(p: Post): string {
+  return `<li class="post-item">
+    <h2><a href="/post/${escapeHtml(p.slug)}">${p.is_pinned ? '<span class="pin-badge">置顶</span> ' : ""}${escapeHtml(p.title)}</a></h2>
+    <div class="post-meta">
+      <span>${p.created_at.slice(0, 10)}</span>
+      ${p.category_name ? `<span class="cat-tag">${escapeHtml(p.category_name)}</span>` : ""}
+      <span>阅读 ${p.views ?? 0}</span>
+    </div>
+    ${p.excerpt ? `<p class="post-excerpt">${escapeHtml(p.excerpt)}</p>` : ""}
+  </li>`;
+}
 
 blog.get("/", async (c) => {
   const page = parseInt(c.req.query("page") || "1");
@@ -19,18 +32,7 @@ blog.get("/", async (c) => {
   const totalPages = Math.ceil(total / 10);
   const catParam = catId ? `&cat=${catId}` : "";
 
-  const postItems = posts
-    .map(
-      (p) => `<li class="post-item">
-        <h2><a href="/post/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a></h2>
-        <div class="post-meta">
-          <span>${p.created_at.slice(0, 10)}</span>
-          ${p.category_name ? `<span class="cat-tag">${escapeHtml(p.category_name)}</span>` : ""}
-        </div>
-        ${p.excerpt ? `<p class="post-excerpt">${escapeHtml(p.excerpt)}</p>` : ""}
-      </li>`
-    )
-    .join("");
+  const postItems = posts.map(postListItem).join("");
 
   const pagination =
     totalPages > 1
@@ -63,18 +65,7 @@ blog.get("/search", async (c) => {
   const { posts, total } = await searchPosts(c.env.DB, q, page);
   const totalPages = Math.ceil(total / 10);
 
-  const postItems = posts
-    .map(
-      (p) => `<li class="post-item">
-        <h2><a href="/post/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a></h2>
-        <div class="post-meta">
-          <span>${p.created_at.slice(0, 10)}</span>
-          ${p.category_name ? `<span class="cat-tag">${escapeHtml(p.category_name)}</span>` : ""}
-        </div>
-        ${p.excerpt ? `<p class="post-excerpt">${escapeHtml(p.excerpt)}</p>` : ""}
-      </li>`
-    )
-    .join("");
+  const postItems = posts.map(postListItem).join("");
 
   const pagination =
     totalPages > 1
@@ -103,24 +94,80 @@ blog.get("/post/:slug", async (c) => {
     return c.html(layout("404", '<p style="text-align:center;padding:3rem">文章不存在</p>', config, { categories }), 404);
   }
 
-  const tags = await getTagsForPost(c.env.DB, post.id);
+  const [tags, comments] = await Promise.all([
+    getTagsForPost(c.env.DB, post.id),
+    getCommentsForPost(c.env.DB, post.id),
+  ]);
+  await incrementPostViews(c.env.DB, post.id);
+  post.views = (post.views ?? 0) + 1;
+
   const tagsHtml = tags.length
     ? `<span class="tag-list">${tags.map((t) => `<a href="/tag/${encodeURIComponent(t.name)}" class="tag-link">#${escapeHtml(t.name)}</a>`).join(" ")}</span>`
     : "";
 
+  const commentItems = comments
+    .map(
+      (cm) => `<li class="comment-item">
+        <div class="comment-head"><strong>${escapeHtml(cm.author)}</strong><span>${cm.created_at.slice(0, 16)}</span></div>
+        <p>${escapeHtml(cm.content)}</p>
+      </li>`
+    )
+    .join("");
+
   const html = await marked(post.content);
+  const commentsEnabled = config.comments_enabled !== "0";
+
+  const commentsHtml = commentsEnabled
+    ? `<section class="comments" id="comments">
+    <h2>评论 ${comments.length}</h2>
+    ${comments.length ? `<ul class="comment-list">${commentItems}</ul>` : `<p class="comment-empty">还没有评论，来抢沙发吧 :)</p>`}
+    <form method="POST" action="/post/${escapeHtml(post.slug)}/comment" class="comment-form">
+      <input type="text" name="author" placeholder="昵称" required maxlength="30">
+      <textarea name="content" placeholder="写下你的评论..." required maxlength="2000"></textarea>
+      <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <input type="hidden" name="t" id="ct-ts">
+      <button type="submit">发表评论</button>
+    </form>
+  </section>`
+    : `<p class="comment-closed">评论功能已关闭</p>`;
+
   const content = `<article class="article">
     <a href="/" class="back-link">&larr; 返回首页</a>
     <h1>${escapeHtml(post.title)}</h1>
     <div class="meta">
       <span>${post.created_at.slice(0, 10)}</span>
+      <span>阅读 ${post.views ?? 0}</span>
       ${post.category_name ? `<a href="/?cat=${post.category_id}" class="cat-tag">${escapeHtml(post.category_name)}</a>` : ""}
       ${tagsHtml}
     </div>
     <div class="content">${html}</div>
-  </article>`;
+  </article>
+  ${commentsHtml}`;
 
-  return c.html(layout(post.title, content, config, { categories }));
+  const canonical = new URL(`/post/${post.slug}`, c.req.url).href;
+  return c.html(layout(post.title, content, config, { categories, description: post.excerpt || config.blog_description, canonical }));
+});
+
+blog.post("/post/:slug/comment", async (c) => {
+  const slug = c.req.param("slug");
+  const [post, config] = await Promise.all([
+    getPostBySlug(c.env.DB, slug),
+    getConfig(c.env.DB),
+  ]);
+  if (!post || !post.published) return c.redirect("/");
+  if (config.comments_enabled === "0") return c.redirect(`/post/${escapeHtml(slug)}#comments`);
+
+  const body = await c.req.parseBody();
+  const website = (body.website as string) || "";
+  const t = parseInt((body.t as string) || "0");
+  const author = ((body.author as string) || "").trim().slice(0, 30);
+  const content = ((body.content as string) || "").trim().slice(0, 2000);
+
+  const ok = author && content && !website && t && Date.now() - t >= 3000;
+  if (!ok) return c.redirect(`/post/${escapeHtml(slug)}#comments`);
+
+  await createComment(c.env.DB, { post_id: post.id, author, content });
+  return c.redirect(`/post/${escapeHtml(slug)}#comments`);
 });
 
 blog.get("/tag/:name", async (c) => {
@@ -134,18 +181,7 @@ blog.get("/tag/:name", async (c) => {
   ]);
 
   const totalPages = Math.ceil(total / 10);
-  const postItems = posts
-    .map(
-      (p) => `<li class="post-item">
-        <h2><a href="/post/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a></h2>
-        <div class="post-meta">
-          <span>${p.created_at.slice(0, 10)}</span>
-          ${p.category_name ? `<span class="cat-tag">${escapeHtml(p.category_name)}</span>` : ""}
-        </div>
-        ${p.excerpt ? `<p class="post-excerpt">${escapeHtml(p.excerpt)}</p>` : ""}
-      </li>`
-    )
-    .join("");
+  const postItems = posts.map(postListItem).join("");
 
   const pagination =
     totalPages > 1
@@ -231,6 +267,44 @@ blog.get("/feed.xml", async (c) => {
 </rss>`;
 
   return c.text(rss, 200, { "Content-Type": "application/xml" });
+});
+
+blog.get("/sitemap.xml", async (c) => {
+  const [{ posts }, config] = await Promise.all([
+    getPublishedPosts(c.env.DB, 1, 9999),
+    getConfig(c.env.DB),
+  ]);
+
+  const url = new URL(c.req.url);
+  const baseUrl = `${url.protocol}//${url.host}`;
+  const blogTitle = config.blog_title || "FishBlog";
+
+  const items = posts
+    .map(
+      (p) => `<url>
+      <loc>${baseUrl}/post/${escapeHtml(p.slug)}</loc>
+      <lastmod>${p.updated_at.slice(0, 10)}</lastmod>
+    </url>`
+    )
+    .join("\n");
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${baseUrl}/</loc></url>
+  <url><loc>${baseUrl}/archive</loc></url>
+  ${items}
+</urlset>`;
+
+  return c.text(xml, 200, { "Content-Type": "application/xml" });
+});
+
+blog.get("/robots.txt", (c) => {
+  const url = new URL(c.req.url);
+  const baseUrl = `${url.protocol}//${url.host}`;
+  return c.text(`User-agent: *
+Allow: /
+Sitemap: ${baseUrl}/sitemap.xml
+`);
 });
 
 blog.get("/favicon.ico", async (c) => {

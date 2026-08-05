@@ -4,7 +4,7 @@ import { sha256, adminAuth, generateToken } from "../middleware/auth.ts";
 import {
   loginPage, postListPage, postEditorPage,
   categoryListPage, categoryEditorPage,
-  apiKeyListPage, apiKeyNewPage, settingsPage,
+  apiKeyListPage, apiKeyNewPage, settingsPage, commentListPage,
 } from "../templates/admin.ts";
 import {
   getAllPosts, getPostById, createPost, updatePost, deletePost,
@@ -12,6 +12,7 @@ import {
   getAllApiKeys, createApiKey, deleteApiKey,
   getConfig, setConfig,
   getTagsForPost, syncPostTags,
+  getAllComments, deleteComment,
 } from "../db/queries.ts";
 
 const admin = new Hono<{ Bindings: Env }>();
@@ -71,6 +72,7 @@ admin.post("/new", async (c) => {
     title: body.title as string, slug: body.slug as string,
     content: body.content as string, excerpt: (body.excerpt as string) || "",
     published: parseInt(body.published as string) || 0, category_id: catId,
+    is_pinned: body.is_pinned ? 1 : 0,
   });
   const postId = result.meta.last_row_id;
   if (postId) await syncPostTags(c.env.DB, postId, parseTags(body.tags as string));
@@ -94,6 +96,7 @@ admin.post("/edit/:id", async (c) => {
     title: body.title as string, slug: body.slug as string,
     content: body.content as string, excerpt: (body.excerpt as string) || "",
     published: parseInt(body.published as string) || 0, category_id: catId,
+    is_pinned: body.is_pinned ? 1 : 0,
   });
   await syncPostTags(c.env.DB, id, parseTags(body.tags as string));
   return c.redirect("/admin");
@@ -102,6 +105,18 @@ admin.post("/edit/:id", async (c) => {
 admin.post("/delete/:id", async (c) => {
   await deletePost(c.env.DB, parseInt(c.req.param("id")));
   return c.redirect("/admin");
+});
+
+// ── Comments ──
+
+admin.get("/comments", async (c) => {
+  const comments = await getAllComments(c.env.DB);
+  return c.html(commentListPage(comments));
+});
+
+admin.post("/comments/delete/:id", async (c) => {
+  await deleteComment(c.env.DB, parseInt(c.req.param("id")));
+  return c.redirect("/admin/comments");
 });
 
 // ── Categories ──
@@ -205,6 +220,7 @@ admin.post("/settings", async (c) => {
   await setConfig(c.env.DB, "blog_title", (body.blog_title as string) || "FishBlog");
   await setConfig(c.env.DB, "blog_description", (body.blog_description as string) || "");
   await setConfig(c.env.DB, "blog_footer", (body.blog_footer as string) || "Powered by FishBlog");
+  await setConfig(c.env.DB, "comments_enabled", body.comments_enabled ? "1" : "0");
 
   const faviconFile = body.favicon;
   if (faviconFile && faviconFile instanceof File && faviconFile.size > 0) {

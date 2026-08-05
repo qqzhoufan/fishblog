@@ -14,12 +14,16 @@
 | | Feature | Description |
 |---|---------|-------------|
 | 📝 | **Markdown Editor** | Built-in admin panel with Markdown editing and instant publishing |
+| 📌 | **Pinned Posts** | Pin posts from the admin panel, shown first on the homepage |
+| 💬 | **Guest Comments** | Comment without registration, built-in anti-spam, manageable in admin |
+| 👁️ | **View Counts** | Automatic read counts displayed on every post |
 | 🏷️ | **Categories & Tags** | Two-level category hierarchy + freeform tags, sidebar filtering |
 | 🔍 | **Full-text Search** | Fuzzy search across titles, content, and excerpts |
 | 🎨 | **Adaptive Theme** | Dark/light mode follows system preference |
 | 🔐 | **Secure Auth** | Admin password managed via Cloudflare Secrets |
 | 🔑 | **REST API** | Built-in API key system with granular permissions for external integrations |
 | 📡 | **RSS Feed** | Built-in `/feed.xml` |
+| 🔎 | **SEO Ready** | Auto-generated `sitemap.xml`, `robots.txt`, canonical & OG tags |
 | 🖼️ | **Custom Favicon** | Upload favicon from admin settings |
 | ⚙️ | **Site Settings** | Visual configuration for blog title, description, footer |
 | 📦 | **Zero Config** | D1 database auto-created, tables auto-initialized on first visit |
@@ -104,6 +108,25 @@ GitHub Actions will automatically:
 
 > Database tables are auto-created on first visit (may take 1-2 seconds).
 
+### Step 6: Get Indexed by Search Engines (Recommended)
+
+After deploying, submit your site to search engines as soon as possible. This project auto-generates `/sitemap.xml` and `/robots.txt`, which can be submitted directly to speed up indexing:
+
+| Platform | URL | Notes |
+|----------|-----|-------|
+| **Bing Webmaster Tools** | https://www.bing.com/webmasters | Free and fastest (indexed within days); data can sync with Google |
+| **Google Search Console** | https://search.google.com/search-console | Reliable indexing, shows search performance |
+| **Baidu Search Resource Platform** | https://ziyuan.baidu.com | Key for Chinese traffic; use "manual submission" to push new post URLs |
+
+**Tips:**
+
+1. **Bind a custom domain first** (e.g. `blog.example.com`) — `.workers.dev` subdomains are de-prioritized by search engines. See "Custom Domain" below.
+2. Add your site on each platform, verify ownership (DNS verification recommended, no code changes), then submit `https://your-domain.com/sitemap.xml`.
+3. **After publishing each new post**, manually submit the new post URL in Baidu's "manual submission" to speed up indexing, or automate it in your publishing flow.
+4. Cloudflare's edge network is globally reachable, but Baidu's crawler may take longer — allow 1–4 weeks.
+
+> The `<head>` already includes canonical, OG tags, and meta description; post pages use the excerpt as description. Basic SEO is done.
+
 ### Custom Domain (Optional)
 
 1. Cloudflare Dashboard → **Workers & Pages** → click `fishblog`
@@ -143,7 +166,9 @@ Include `Authorization: Bearer YOUR_API_KEY` in request headers.
 |--------|------|------------|-------------|
 | `GET` | `/api/posts` | read | List posts (`?page=`, `?category_id=`, `?all=true`) |
 | `GET` | `/api/posts/:slug` | read | Get post by slug (includes tags) |
-| `POST` | `/api/posts` | create | Create post |
+| `GET` | `/api/posts/:slug/comments` | read | Get comments for a post |
+| `POST` | `/api/posts` | create | Create post (supports `is_pinned`) |
+| `PUT` | `/api/posts/:id` | update | Update post (supports `is_pinned`) |
 | `PUT` | `/api/posts/:id` | update | Update post |
 | `DELETE` | `/api/posts/:id` | delete | Delete post |
 | `GET` | `/api/categories` | read | Get category tree |

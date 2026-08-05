@@ -1,4 +1,4 @@
-import type { Post, Category, ApiKey } from "../types.ts";
+import type { Post, Category, ApiKey, Comment } from "../types.ts";
 
 // ── Posts ──
 
@@ -17,7 +17,7 @@ export async function getPublishedPosts(
     : [pageSize, offset];
   const countBinds = categoryId ? [categoryId] : [];
 
-  const postsQuery = `SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id ${where} ORDER BY p.created_at DESC LIMIT ? OFFSET ?`;
+  const postsQuery = `SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id ${where} ORDER BY p.is_pinned DESC, p.created_at DESC LIMIT ? OFFSET ?`;
   const countQuery = `SELECT COUNT(*) as count FROM posts p ${where}`;
 
   const [posts, countResult] = await Promise.all([
@@ -42,7 +42,7 @@ export async function searchPosts(
   const [posts, countResult] = await Promise.all([
     db
       .prepare(
-        "SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id WHERE p.published = 1 AND (p.title LIKE ? OR p.content LIKE ? OR p.excerpt LIKE ?) ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+        "SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id WHERE p.published = 1 AND (p.title LIKE ? OR p.content LIKE ? OR p.excerpt LIKE ?) ORDER BY p.is_pinned DESC, p.created_at DESC LIMIT ? OFFSET ?"
       )
       .bind(like, like, like, pageSize, offset)
       .all<Post>(),
@@ -59,7 +59,7 @@ export async function searchPosts(
 export async function getAllPosts(db: D1Database): Promise<Post[]> {
   const result = await db
     .prepare(
-      "SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id ORDER BY p.created_at DESC"
+      "SELECT p.*, c.name as category_name, (SELECT COUNT(*) FROM comments cm WHERE cm.post_id = p.id) as comment_count FROM posts p LEFT JOIN categories c ON p.category_id = c.id ORDER BY p.is_pinned DESC, p.created_at DESC"
     )
     .all<Post>();
   return result.results;
@@ -91,20 +91,20 @@ export async function getPostById(
 
 export async function createPost(
   db: D1Database,
-  post: Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id">
+  post: Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id" | "is_pinned">
 ): Promise<D1Result> {
   return db
     .prepare(
-      "INSERT INTO posts (slug, title, content, excerpt, published, category_id) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO posts (slug, title, content, excerpt, published, category_id, is_pinned) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(post.slug, post.title, post.content, post.excerpt, post.published, post.category_id)
+    .bind(post.slug, post.title, post.content, post.excerpt, post.published, post.category_id, post.is_pinned ?? 0)
     .run();
 }
 
 export async function updatePost(
   db: D1Database,
   id: number,
-  post: Partial<Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id">>
+  post: Partial<Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id" | "is_pinned">>
 ): Promise<D1Result> {
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -114,6 +114,7 @@ export async function updatePost(
   if (post.excerpt !== undefined) { fields.push("excerpt = ?"); values.push(post.excerpt); }
   if (post.published !== undefined) { fields.push("published = ?"); values.push(post.published); }
   if (post.category_id !== undefined) { fields.push("category_id = ?"); values.push(post.category_id); }
+  if (post.is_pinned !== undefined) { fields.push("is_pinned = ?"); values.push(post.is_pinned); }
   fields.push("updated_at = datetime('now')");
   values.push(id);
   return db
@@ -123,7 +124,12 @@ export async function updatePost(
 }
 
 export async function deletePost(db: D1Database, id: number): Promise<D1Result> {
+  await db.prepare("DELETE FROM comments WHERE post_id = ?").bind(id).run();
   return db.prepare("DELETE FROM posts WHERE id = ?").bind(id).run();
+}
+
+export async function incrementPostViews(db: D1Database, id: number): Promise<void> {
+  await db.prepare("UPDATE posts SET views = views + 1 WHERE id = ?").bind(id).run();
 }
 
 // ── Categories ──
@@ -268,13 +274,48 @@ export async function getPostsByTag(
   const offset = (page - 1) * pageSize;
   const [posts, countResult] = await Promise.all([
     db.prepare(
-      "SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id JOIN post_tags pt ON p.id = pt.post_id JOIN tags t ON pt.tag_id = t.id WHERE p.published = 1 AND t.name = ? ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+      "SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id JOIN post_tags pt ON p.id = pt.post_id JOIN tags t ON pt.tag_id = t.id WHERE p.published = 1 AND t.name = ? ORDER BY p.is_pinned DESC, p.created_at DESC LIMIT ? OFFSET ?"
     ).bind(tagName, pageSize, offset).all<Post>(),
     db.prepare(
       "SELECT COUNT(*) as count FROM posts p JOIN post_tags pt ON p.id = pt.post_id JOIN tags t ON pt.tag_id = t.id WHERE p.published = 1 AND t.name = ?"
     ).bind(tagName).first<{ count: number }>(),
   ]);
   return { posts: posts.results, total: countResult?.count ?? 0 };
+}
+
+// ── Comments ──
+
+export async function getCommentsForPost(db: D1Database, postId: number): Promise<Comment[]> {
+  const result = await db
+    .prepare("SELECT * FROM comments WHERE post_id = ? ORDER BY created_at ASC")
+    .bind(postId)
+    .all<Comment>();
+  return result.results;
+}
+
+export async function createComment(
+  db: D1Database,
+  comment: Pick<Comment, "post_id" | "author" | "content">
+): Promise<D1Result> {
+  return db
+    .prepare("INSERT INTO comments (post_id, author, content) VALUES (?, ?, ?)")
+    .bind(comment.post_id, comment.author, comment.content)
+    .run();
+}
+
+export type CommentWithPost = Comment & { post_title: string; post_slug: string };
+
+export async function getAllComments(db: D1Database): Promise<CommentWithPost[]> {
+  const result = await db
+    .prepare(
+      "SELECT cm.*, p.title as post_title, p.slug as post_slug FROM comments cm LEFT JOIN posts p ON cm.post_id = p.id ORDER BY cm.created_at DESC"
+    )
+    .all<CommentWithPost>();
+  return result.results;
+}
+
+export async function deleteComment(db: D1Database, id: number): Promise<D1Result> {
+  return db.prepare("DELETE FROM comments WHERE id = ?").bind(id).run();
 }
 
 // ── Config ──

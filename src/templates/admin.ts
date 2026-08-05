@@ -1,5 +1,6 @@
 import { escapeHtml } from "./layout.ts";
-import type { Post, Category, ApiKey } from "../types.ts";
+import type { Post, Category, ApiKey, Comment } from "../types.ts";
+import type { CommentWithPost } from "../db/queries.ts";
 
 export function adminLayout(title: string, content: string): string {
   return `<!DOCTYPE html>
@@ -52,6 +53,7 @@ export function adminLayout(title: string, content: string): string {
     .badge { display: inline-block; padding: .15rem .5rem; border-radius: 99px; font-size: .75rem; font-weight: 600; }
     .badge-pub { background: #052e16; color: var(--success); }
     .badge-draft { background: #1c1917; color: var(--muted); }
+    .badge-pin { background: #7c2d12; color: #fb923c; }
 
     .form-group { margin-bottom: 1.25rem; }
     .form-group label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .4rem; font-weight: 500; }
@@ -93,6 +95,7 @@ export function adminLayout(title: string, content: string): string {
     <nav>
       <a href="/admin">文章</a>
       <a href="/admin/categories">分类</a>
+      <a href="/admin/comments">评论</a>
       <a href="/admin/apikeys">API Keys</a>
       <a href="/admin/settings">设置</a>
       <a href="/" target="_blank">查看博客</a>
@@ -146,9 +149,11 @@ export function postListPage(posts: Post[]): string {
   const rows = posts
     .map(
       (p) => `<tr>
-      <td>${escapeHtml(p.title)}</td>
+      <td>${p.is_pinned ? '<span class="badge badge-pin">置顶</span> ' : ""}${escapeHtml(p.title)}</td>
       <td>${p.category_name ? escapeHtml(p.category_name) : '<span style="color:var(--muted)">-</span>'}</td>
       <td>${p.published ? '<span class="badge badge-pub">已发布</span>' : '<span class="badge badge-draft">草稿</span>'}</td>
+      <td>${p.views ?? 0}</td>
+      <td>${p.comment_count ?? 0}</td>
       <td>${p.created_at.slice(0, 10)}</td>
       <td>
         <div class="actions">
@@ -165,8 +170,8 @@ export function postListPage(posts: Post[]): string {
   return adminLayout("文章管理", `
     <div class="top-bar"><h2 class="page-title">文章管理</h2><a href="/admin/new" class="btn btn-primary">+ 新建文章</a></div>
     <table>
-      <thead><tr><th>标题</th><th>分类</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:3rem">暂无文章</td></tr>'}</tbody>
+      <thead><tr><th>标题</th><th>分类</th><th>状态</th><th>浏览</th><th>评论</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:3rem">暂无文章</td></tr>'}</tbody>
     </table>`);
 }
 
@@ -210,6 +215,11 @@ export function postEditorPage(post?: Post, categories: Category[] = [], tags: s
             <option value="0" ${!post?.published ? "selected" : ""}>草稿</option>
             <option value="1" ${post?.published ? "selected" : ""}>发布</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:.4rem;color:var(--fg);cursor:pointer">
+            <input type="checkbox" name="is_pinned" value="1" style="width:auto" ${post?.is_pinned ? "checked" : ""}> 置顶（首页优先展示）
+          </label>
         </div>
         <div class="form-group"><div class="actions"><button type="submit" class="btn btn-primary">保存</button><a href="/admin" class="btn">取消</a></div></div>
       </div>
@@ -365,6 +375,12 @@ export function settingsPage(config: Record<string, string>, saved?: boolean): s
       </div>
       <div class="form-group"><label>底部文字</label><input type="text" name="blog_footer" value="${escapeHtml(config.blog_footer || "Powered by FishBlog")}"></div>
       <div class="form-group">
+        <label style="display:flex;align-items:center;gap:.4rem;color:var(--fg);cursor:pointer">
+          <input type="checkbox" name="comments_enabled" value="1" style="width:auto" ${config.comments_enabled !== "0" ? "checked" : ""}> 启用游客评论
+        </label>
+        <p style="font-size:.75rem;color:var(--muted);margin-top:.3rem">关闭后前台将不显示评论区，游客无法提交评论（已有评论保留）</p>
+      </div>
+      <div class="form-group">
         <label>站点图标（Favicon）</label>
         <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.5rem">
           ${hasFavicon ? '<img src="/favicon.ico" style="width:32px;height:32px;border-radius:4px;border:1px solid var(--border)">' : '<span style="color:var(--muted);font-size:.85rem">未设置</span>'}
@@ -374,4 +390,31 @@ export function settingsPage(config: Record<string, string>, saved?: boolean): s
       </div>
       <button type="submit" class="btn btn-primary">保存设置</button>
     </form>`);
+}
+
+// ── Comments ──
+
+export function commentListPage(comments: CommentWithPost[]): string {
+  const rows = comments
+    .map(
+      (cm) => `<tr>
+      <td>${escapeHtml(cm.author)}</td>
+      <td>${escapeHtml(cm.content.length > 80 ? cm.content.slice(0, 80) + "…" : cm.content)}</td>
+      <td>${cm.post_title ? `<a href="/post/${escapeHtml(cm.post_slug)}" target="_blank">${escapeHtml(cm.post_title)}</a>` : `<span style="color:var(--muted)">已删除</span>`}</td>
+      <td>${cm.created_at.slice(0, 16)}</td>
+      <td>
+        <form method="POST" action="/admin/comments/delete/${cm.id}" onsubmit="return confirm('确定删除此评论？')">
+          <button type="submit" class="btn btn-sm btn-danger">删除</button>
+        </form>
+      </td>
+    </tr>`
+    )
+    .join("");
+
+  return adminLayout("评论管理", `
+    <div class="top-bar"><h2 class="page-title">评论管理</h2></div>
+    <table>
+      <thead><tr><th>昵称</th><th>内容</th><th>文章</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:3rem">暂无评论</td></tr>'}</tbody>
+    </table>`);
 }
