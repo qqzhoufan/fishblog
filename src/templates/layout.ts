@@ -198,7 +198,7 @@ export function layout(
     <div class="main-content">${content}</div>
     ${sidebar}
   </div>
-  <footer>${escapeHtml(config.blog_footer || "Powered by FishBlog")}</footer>
+  <footer>${config.blog_footer || "Powered by FishBlog"}</footer>
   <script>
     var el = document.getElementById('ct-ts');
     if (el) el.value = Date.now().toString();
@@ -239,4 +239,14 @@ export function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// Convert UTC datetime string (from D1) to Beijing time (UTC+8) for display
+export function formatDate(utc: string, withTime = false): string {
+  const d = new Date(utc + "Z");
+  if (isNaN(d.getTime())) return utc;
+  const t = new Date(d.getTime() + 8 * 3600 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const base = `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+  return withTime ? `${base} ${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}` : base;
 }

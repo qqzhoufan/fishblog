@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { marked } from "marked";
 import type { Env } from "../types.ts";
-import { layout, escapeHtml } from "../templates/layout.ts";
+import { layout, escapeHtml, formatDate } from "../templates/layout.ts";
 import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon, getTagsForPost, getPostsByTag, getAllTags, incrementPostViews, getCommentsForPost, createComment } from "../db/queries.ts";
 import type { Post } from "../types.ts";
 
@@ -11,7 +11,7 @@ function postListItem(p: Post): string {
   return `<li class="post-item">
     <h2><a href="/post/${escapeHtml(p.slug)}">${p.is_pinned ? '<span class="pin-badge">置顶</span> ' : ""}${escapeHtml(p.title)}</a></h2>
     <div class="post-meta">
-      <span>${p.created_at.slice(0, 10)}</span>
+      <span>${formatDate(p.created_at)}</span>
       ${p.category_name ? `<span class="cat-tag">${escapeHtml(p.category_name)}</span>` : ""}
       <span>阅读 ${p.views ?? 0}</span>
     </div>
@@ -108,7 +108,7 @@ blog.get("/post/:slug", async (c) => {
   const commentItems = comments
     .map(
       (cm) => `<li class="comment-item">
-        <div class="comment-head"><strong>${escapeHtml(cm.author)}</strong><span>${cm.created_at.slice(0, 16)}</span></div>
+        <div class="comment-head"><strong>${escapeHtml(cm.author)}</strong><span>${formatDate(cm.created_at, true)}</span></div>
         <p>${escapeHtml(cm.content)}</p>
       </li>`
     )
@@ -135,7 +135,7 @@ blog.get("/post/:slug", async (c) => {
     <a href="/" class="back-link">&larr; 返回首页</a>
     <h1>${escapeHtml(post.title)}</h1>
     <div class="meta">
-      <span>${post.created_at.slice(0, 10)}</span>
+      <span>${formatDate(post.created_at)}</span>
       <span>阅读 ${post.views ?? 0}</span>
       ${post.category_name ? `<a href="/?cat=${post.category_id}" class="cat-tag">${escapeHtml(post.category_name)}</a>` : ""}
       ${tagsHtml}
@@ -207,7 +207,7 @@ blog.get("/archive", async (c) => {
 
   const grouped: Record<string, typeof posts> = {};
   for (const post of posts) {
-    const year = post.created_at.slice(0, 4);
+    const year = formatDate(post.created_at).slice(0, 4);
     if (!grouped[year]) grouped[year] = [];
     grouped[year].push(post);
   }
@@ -221,7 +221,7 @@ blog.get("/archive", async (c) => {
         ${grouped[year]
           .map(
             (p) => `<li>
-              <span class="date">${p.created_at.slice(5, 10)}</span>
+              <span class="date">${formatDate(p.created_at).slice(5, 10)}</span>
               <a href="/post/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a>
             </li>`
           )
