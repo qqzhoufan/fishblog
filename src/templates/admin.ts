@@ -1,6 +1,7 @@
 import { escapeHtml, formatDate } from "./layout.ts";
 import type { Post, Category, ApiKey, Comment } from "../types.ts";
 import type { CommentWithPost } from "../db/queries.ts";
+import type { NotificationStats } from "../services/notifications.ts";
 
 export function adminLayout(title: string, content: string): string {
   return `<!DOCTYPE html>
@@ -86,6 +87,11 @@ export function adminLayout(title: string, content: string): string {
     .checkbox-group input[type="checkbox"] { accent-color: var(--accent); }
 
     .section-title { font-size: 1.1rem; margin: 2rem 0 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
+    .comment-full { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: .5rem; }
+    .comment-reply-form { display: grid; gap: .4rem; margin: .5rem 0; }
+    .comment-reply-form textarea { width: 100%; min-width: 12rem; padding: .5rem; color: var(--fg); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font: inherit; }
+    .notification-status { margin: 0 0 1.25rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); line-height: 1.6; }
+    .notification-status p { margin: .35rem 0; color: var(--muted); font-size: .875rem; }
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 </head>
@@ -168,7 +174,7 @@ export function postListPage(posts: Post[]): string {
     .join("");
 
   return adminLayout("文章管理", `
-    <div class="top-bar"><h2 class="page-title">文章管理</h2><a href="/admin/new" class="btn btn-primary">+ 新建文章</a></div>
+    <div class="top-bar"><h2 class="page-title">文章管理</h2><div class="actions"><a href="/admin/comments" class="btn">评论管理</a><a href="/admin/new" class="btn btn-primary">+ 新建文章</a></div></div>
     <table>
       <thead><tr><th>标题</th><th>分类</th><th>状态</th><th>浏览</th><th>评论</th><th>创建时间</th><th>操作</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:3rem">暂无文章</td></tr>'}</tbody>
@@ -234,7 +240,7 @@ export function categoryListPage(categories: Category[]): string {
       <td><strong>${escapeHtml(c.name)}</strong></td>
       <td><code>${escapeHtml(c.slug)}</code></td>
       <td>—</td>
-      <td>${c.sort_order}</td>
+      <td>${escapeHtml(String(c.sort_order))}</td>
       <td><div class="actions">
         <a href="/admin/categories/edit/${c.id}" class="btn btn-sm">编辑</a>
         <form method="POST" action="/admin/categories/delete/${c.id}" onsubmit="return confirm('删除分类后，该分类下的文章将变为无分类。确定？')">
@@ -247,7 +253,7 @@ export function categoryListPage(categories: Category[]): string {
       <td>&nbsp;&nbsp;└ ${escapeHtml(ch.name)}</td>
       <td><code>${escapeHtml(ch.slug)}</code></td>
       <td>${escapeHtml(c.name)}</td>
-      <td>${ch.sort_order}</td>
+      <td>${escapeHtml(String(ch.sort_order))}</td>
       <td><div class="actions">
         <a href="/admin/categories/edit/${ch.id}" class="btn btn-sm">编辑</a>
         <form method="POST" action="/admin/categories/delete/${ch.id}" onsubmit="return confirm('确定删除？')">
@@ -284,7 +290,7 @@ export function categoryEditorPage(category?: Category & { id?: number }, parent
         <div class="form-group"><label>上级分类</label>
           <select name="parent_id"><option value="">无（一级分类）</option>${parentOptions}</select>
         </div>
-        <div class="form-group"><label>排序（数字越小越靠前）</label><input type="number" name="sort_order" value="${category?.sort_order ?? 0}"></div>
+        <div class="form-group"><label>排序（数字越小越靠前）</label><input type="number" name="sort_order" value="${escapeHtml(String(category?.sort_order ?? 0))}"></div>
       </div>
       <div class="actions"><button type="submit" class="btn btn-primary">保存</button><a href="/admin/categories" class="btn">取消</a></div>
     </form>`);
@@ -362,12 +368,13 @@ export function apiKeyNewPage(): string {
 
 // ── Settings ──
 
-export function settingsPage(config: Record<string, string>, saved?: boolean): string {
+export function settingsPage(config: Record<string, string>, saved?: boolean, error?: string): string {
   const hasFavicon = !!config.favicon;
 
   return adminLayout("站点设置", `
     <h2 class="page-title">站点设置</h2>
     ${saved ? '<div style="background:#052e16;color:#22c55e;padding:.6rem 1rem;border-radius:var(--radius);margin-bottom:1rem;font-size:.85rem">保存成功</div>' : ""}
+    ${error ? `<div class="error-msg">${escapeHtml(error)}</div>` : ""}
     <form method="POST" action="/admin/settings" enctype="multipart/form-data">
       <div class="form-row">
         <div class="form-group"><label>博客标题</label><input type="text" name="blog_title" value="${escapeHtml(config.blog_title || "FishBlog")}"></div>
@@ -386,7 +393,7 @@ export function settingsPage(config: Record<string, string>, saved?: boolean): s
           ${hasFavicon ? '<img src="/favicon.ico" style="width:32px;height:32px;border-radius:4px;border:1px solid var(--border)">' : '<span style="color:var(--muted);font-size:.85rem">未设置</span>'}
         </div>
         <input type="file" name="favicon" accept="image/png,image/x-icon,image/svg+xml,image/jpeg,image/webp" style="font-size:.85rem">
-        <p style="font-size:.75rem;color:var(--muted);margin-top:.3rem">支持 PNG、ICO、SVG、JPG，建议 64x64 以内</p>
+        <p style="font-size:.75rem;color:var(--muted);margin-top:.3rem">支持 PNG、ICO、SVG、JPG、WebP，建议 64x64 以内；文件不超过 1.4 MB</p>
       </div>
       <button type="submit" class="btn btn-primary">保存设置</button>
     </form>`);
@@ -394,16 +401,25 @@ export function settingsPage(config: Record<string, string>, saved?: boolean): s
 
 // ── Comments ──
 
-export function commentListPage(comments: CommentWithPost[]): string {
+export function commentListPage(comments: CommentWithPost[], notification?: {
+  configured: boolean; adminConfigured: boolean; stats: NotificationStats | null;
+}): string {
   const rows = comments
     .map(
       (cm) => `<tr>
       <td>${escapeHtml(cm.author)}</td>
-      <td>${escapeHtml(cm.content.length > 80 ? cm.content.slice(0, 80) + "…" : cm.content)}</td>
+      <td>${cm.content.length > 80 ? `<details><summary>${escapeHtml(cm.content.slice(0, 80))}…</summary><p class="comment-full">${escapeHtml(cm.content)}</p></details>` : `<p class="comment-full">${escapeHtml(cm.content)}</p>`}</td>
       <td>${cm.post_title ? `<a href="/post/${escapeHtml(cm.post_slug)}" target="_blank">${escapeHtml(cm.post_title)}</a>` : `<span style="color:var(--muted)">已删除</span>`}</td>
       <td>${formatDate(cm.created_at, true)}</td>
       <td>
-        <form method="POST" action="/admin/comments/delete/${cm.id}" onsubmit="return confirm('确定删除此评论？')">
+        <details>
+          <summary>回复</summary>
+          <form method="POST" class="comment-reply-form" action="/admin/comments/reply/${cm.id}">
+            <label>回复 ${escapeHtml(cm.author)}<textarea name="content" required maxlength="2000" rows="3"></textarea></label>
+            <button type="submit" class="btn btn-sm">发送回复</button>
+          </form>
+        </details>
+        <form method="POST" action="/admin/comments/delete/${cm.id}" onsubmit="return confirm('确定删除此评论？其回复及通知信息也会删除。')">
           <button type="submit" class="btn btn-sm btn-danger">删除</button>
         </form>
       </td>
@@ -413,6 +429,13 @@ export function commentListPage(comments: CommentWithPost[]): string {
 
   return adminLayout("评论管理", `
     <div class="top-bar"><h2 class="page-title">评论管理</h2></div>
+    ${notification?.configured ? `<div class="notification-status">
+      <strong>邮件通知</strong>
+      <p>${notification.adminConfigured ? "新评论将通知管理员；" : "未配置管理员收件邮箱；"}访客勾选通知后可收到回复邮件。</p>
+      ${notification.stats ? `<p>待发送 ${notification.stats.pending} · 发送中 ${notification.stats.sending} · 失败 ${notification.stats.failed} · 今日尝试 ${notification.stats.todayAttempts}/80</p>
+      <form method="POST" action="/admin/comments/notifications/retry"><button class="btn btn-sm" type="submit">重试失败并处理待发送通知</button></form>
+      <p>通知在后台处理，请稍后刷新查看；超过安全重试期限的邮件不会重发。</p>` : "<p>暂时无法读取通知状态，请稍后重试。</p>"}
+    </div>` : notification ? `<div class="notification-status"><p>邮件通知未配置，评论和回复仍可正常使用。配置方法见 README。</p></div>` : ""}
     <table>
       <thead><tr><th>昵称</th><th>内容</th><th>文章</th><th>时间</th><th>操作</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:3rem">暂无评论</td></tr>'}</tbody>

@@ -17,16 +17,24 @@ jobs:
 
       - name: Check secrets
         run: |
-          if [ -z "${{ secrets.CF_API_TOKEN }}" ] || [ -z "${{ secrets.CF_ACCOUNT_ID }}" ]; then
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::error::Missing required secrets. Please set CF_API_TOKEN and CF_ACCOUNT_ID in repository Settings → Secrets → Actions."
             exit 1
           fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
       - name: Prepare wrangler config
         run: cp wrangler.toml.example wrangler.toml
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check types and run regression tests
+        run: |
+          npm run typecheck
+          npm test
 
       - name: Create D1 database (idempotent)
         run: npx wrangler d1 create fishblog-db 2>&1 || echo "Database already exists, skipping."
@@ -64,11 +72,39 @@ jobs:
 
       - name: Set admin secrets
         run: |
-          echo "${{ secrets.ADMIN_USERNAME }}" | npx wrangler secret put ADMIN_USERNAME 2>&1 || true
-          echo "${{ secrets.ADMIN_PASSWORD }}" | npx wrangler secret put ADMIN_PASSWORD 2>&1 || true
+          if [ -n "$FISHBLOG_ADMIN_USERNAME" ]; then
+            printf '%s' "$FISHBLOG_ADMIN_USERNAME" | npx wrangler secret put ADMIN_USERNAME
+          fi
+          if [ -n "$FISHBLOG_ADMIN_PASSWORD" ]; then
+            printf '%s' "$FISHBLOG_ADMIN_PASSWORD" | npx wrangler secret put ADMIN_PASSWORD
+          fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          FISHBLOG_ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          FISHBLOG_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+
+      - name: Set optional email notification secrets
+        run: |
+          if [ -n "$FISHBLOG_RESEND_API_KEY" ]; then
+            printf '%s' "$FISHBLOG_RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
+          fi
+          if [ -n "$FISHBLOG_MAIL_FROM" ]; then
+            printf '%s' "$FISHBLOG_MAIL_FROM" | npx wrangler secret put MAIL_FROM
+          fi
+          if [ -n "$FISHBLOG_ADMIN_NOTIFY_EMAIL" ]; then
+            printf '%s' "$FISHBLOG_ADMIN_NOTIFY_EMAIL" | npx wrangler secret put ADMIN_NOTIFY_EMAIL
+          fi
+          if [ -n "$FISHBLOG_SITE_URL" ]; then
+            printf '%s' "$FISHBLOG_SITE_URL" | npx wrangler secret put SITE_URL
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          FISHBLOG_RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          FISHBLOG_MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          FISHBLOG_ADMIN_NOTIFY_EMAIL: ${{ secrets.ADMIN_NOTIFY_EMAIL }}
+          FISHBLOG_SITE_URL: ${{ secrets.SITE_URL }}
 
       - name: Deploy Worker
         run: npx wrangler deploy

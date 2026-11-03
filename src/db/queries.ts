@@ -1,4 +1,4 @@
-import type { Post, Category, ApiKey, Comment } from "../types.ts";
+import type { Post, Category, ApiKey, Comment, CommentReply } from "../types.ts";
 
 // ── Posts ──
 
@@ -91,20 +91,26 @@ export async function getPostById(
 
 export async function createPost(
   db: D1Database,
-  post: Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id" | "is_pinned">
+  post: Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id" | "is_pinned">,
+  tagNames?: string[],
 ): Promise<D1Result> {
-  return db
+  const insert = db
     .prepare(
       "INSERT INTO posts (slug, title, content, excerpt, published, category_id, is_pinned) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(post.slug, post.title, post.content, post.excerpt, post.published, post.category_id, post.is_pinned ?? 0)
-    .run();
+    .bind(post.slug, post.title, post.content, post.excerpt, post.published, post.category_id, post.is_pinned ?? 0);
+  if (tagNames === undefined || (Array.isArray(tagNames) && tagNames.length === 0)) return insert.run();
+  // The slug is unique and the batch is transactional. Looking up the inserted
+  // row by slug avoids relying on connection-scoped last_insert_rowid().
+  const [result] = await db.batch([insert, ...newPostTagStatements(db, post.slug, tagNames)]);
+  return result;
 }
 
 export async function updatePost(
   db: D1Database,
   id: number,
-  post: Partial<Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id" | "is_pinned">>
+  post: Partial<Pick<Post, "slug" | "title" | "content" | "excerpt" | "published" | "category_id" | "is_pinned">>,
+  tagNames?: string[],
 ): Promise<D1Result> {
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -117,15 +123,20 @@ export async function updatePost(
   if (post.is_pinned !== undefined) { fields.push("is_pinned = ?"); values.push(post.is_pinned); }
   fields.push("updated_at = datetime('now')");
   values.push(id);
-  return db
+  const update = db
     .prepare(`UPDATE posts SET ${fields.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+    .bind(...values);
+  if (tagNames === undefined) return update.run();
+  const [result] = await db.batch([update, ...tagSyncStatements(db, id, tagNames)]);
+  return result;
 }
 
 export async function deletePost(db: D1Database, id: number): Promise<D1Result> {
-  await db.prepare("DELETE FROM comments WHERE post_id = ?").bind(id).run();
-  return db.prepare("DELETE FROM posts WHERE id = ?").bind(id).run();
+  const [, result] = await db.batch([
+    db.prepare("DELETE FROM comments WHERE post_id = ?").bind(id),
+    db.prepare("DELETE FROM posts WHERE id = ?").bind(id),
+  ]);
+  return result;
 }
 
 export async function incrementPostViews(db: D1Database, id: number): Promise<void> {
@@ -169,7 +180,6 @@ export async function getCategoryTree(db: D1Database): Promise<Category[]> {
 
   for (const root of roots) {
     root.children = childrenMap[root.id] || [];
-    root.post_count = (root.post_count || 0) + root.children.reduce((s, c) => s + (c.post_count || 0), 0);
   }
 
   return roots;
@@ -201,9 +211,12 @@ export async function updateCategory(
 }
 
 export async function deleteCategory(db: D1Database, id: number): Promise<D1Result> {
-  await db.prepare("UPDATE posts SET category_id = NULL WHERE category_id = ?").bind(id).run();
-  await db.prepare("UPDATE categories SET parent_id = NULL WHERE parent_id = ?").bind(id).run();
-  return db.prepare("DELETE FROM categories WHERE id = ?").bind(id).run();
+  const [, , result] = await db.batch([
+    db.prepare("UPDATE posts SET category_id = NULL WHERE category_id = ?").bind(id),
+    db.prepare("UPDATE categories SET parent_id = NULL WHERE parent_id = ?").bind(id),
+    db.prepare("DELETE FROM categories WHERE id = ?").bind(id),
+  ]);
+  return result;
 }
 
 // ── API Keys ──
@@ -254,18 +267,37 @@ export async function getTagsForPost(db: D1Database, postId: number): Promise<Ta
   return result.results;
 }
 
-export async function syncPostTags(db: D1Database, postId: number, tagNames: string[]): Promise<void> {
-  await db.prepare("DELETE FROM post_tags WHERE post_id = ?").bind(postId).run();
+function normalizeTagNames(tagNames: string[]): string[] {
+  return [...new Set(tagNames.map((name) => name.trim()).filter(Boolean))];
+}
 
-  for (const name of tagNames) {
-    const trimmed = name.trim();
-    if (!trimmed) continue;
-    await db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)").bind(trimmed).run();
-    const tag = await db.prepare("SELECT id FROM tags WHERE name = ?").bind(trimmed).first<{ id: number }>();
-    if (tag) {
-      await db.prepare("INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?, ?)").bind(postId, tag.id).run();
-    }
+function newPostTagStatements(db: D1Database, slug: string, tagNames: string[]): D1PreparedStatement[] {
+  const statements: D1PreparedStatement[] = [];
+  for (const name of normalizeTagNames(tagNames)) {
+    statements.push(db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)").bind(name));
+    statements.push(
+      db.prepare("INSERT OR IGNORE INTO post_tags (post_id, tag_id) SELECT p.id, t.id FROM posts p, tags t WHERE p.slug = ? AND t.name = ?")
+        .bind(slug, name)
+    );
   }
+  return statements;
+}
+
+function tagSyncStatements(db: D1Database, postId: number, tagNames: string[]): D1PreparedStatement[] {
+  const statements = [db.prepare("DELETE FROM post_tags WHERE post_id = ?").bind(postId)];
+  for (const name of normalizeTagNames(tagNames)) {
+    statements.push(db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)").bind(name));
+    statements.push(
+      db.prepare("INSERT OR IGNORE INTO post_tags (post_id, tag_id) SELECT ?, id FROM tags WHERE name = ?")
+        .bind(postId, name)
+    );
+  }
+  return statements;
+}
+
+export async function syncPostTags(db: D1Database, postId: number, tagNames: string[]): Promise<void> {
+  // D1 executes a batch as a transaction: a failed insert also restores the old associations.
+  await db.batch(tagSyncStatements(db, postId, tagNames));
 }
 
 export async function getPostsByTag(
@@ -287,7 +319,7 @@ export async function getPostsByTag(
 
 export async function getCommentsForPost(db: D1Database, postId: number): Promise<Comment[]> {
   const result = await db
-    .prepare("SELECT * FROM comments WHERE post_id = ? ORDER BY created_at ASC")
+    .prepare("SELECT id, post_id, author, content, created_at FROM comments WHERE post_id = ? ORDER BY created_at ASC, id ASC")
     .bind(postId)
     .all<Comment>();
   return result.results;
@@ -295,12 +327,41 @@ export async function getCommentsForPost(db: D1Database, postId: number): Promis
 
 export async function createComment(
   db: D1Database,
-  comment: Pick<Comment, "post_id" | "author" | "content">
+  comment: Pick<Comment, "post_id" | "author" | "content">,
+  email?: string,
 ): Promise<D1Result> {
-  return db
+  const insert = db
     .prepare("INSERT INTO comments (post_id, author, content) VALUES (?, ?, ?)")
-    .bind(comment.post_id, comment.author, comment.content)
-    .run();
+    .bind(comment.post_id, comment.author, comment.content);
+  if (!email) return insert.run();
+  // D1 batch runs sequentially in one transaction, so last_insert_rowid()
+  // refers to this insert. A failed contact insert rolls the comment back.
+  const [result] = await db.batch([
+    insert,
+    db.prepare("INSERT INTO comment_contacts (comment_id, email) VALUES (last_insert_rowid(), ?)").bind(email),
+  ]);
+  return result;
+}
+
+export async function getRepliesForPost(db: D1Database, postId: number): Promise<CommentReply[]> {
+  const result = await db.prepare(
+    "SELECT r.id, r.comment_id, r.content, r.created_at FROM comment_replies r JOIN comments c ON c.id = r.comment_id WHERE c.post_id = ? ORDER BY r.created_at ASC, r.id ASC"
+  ).bind(postId).all<CommentReply>();
+  return result.results;
+}
+
+export async function createCommentReply(db: D1Database, commentId: number, content: string): Promise<D1Result> {
+  return db.prepare("INSERT INTO comment_replies (comment_id, content) VALUES (?, ?)").bind(commentId, content).run();
+}
+
+// Private: never return this object from a public API or render the address.
+export type CommentNotificationInfo = Comment & { post_title: string; post_slug: string; email: string | null };
+export async function getCommentNotificationInfo(db: D1Database, commentId: number): Promise<CommentNotificationInfo | null> {
+  return db.prepare(`SELECT c.id, c.post_id, c.author, c.content, c.created_at,
+    p.title AS post_title, p.slug AS post_slug, cc.email AS email
+    FROM comments c JOIN posts p ON p.id = c.post_id
+    LEFT JOIN comment_contacts cc ON cc.comment_id = c.id WHERE c.id = ?`)
+    .bind(commentId).first<CommentNotificationInfo>();
 }
 
 export type CommentWithPost = Comment & { post_title: string; post_slug: string };
@@ -308,7 +369,7 @@ export type CommentWithPost = Comment & { post_title: string; post_slug: string 
 export async function getAllComments(db: D1Database): Promise<CommentWithPost[]> {
   const result = await db
     .prepare(
-      "SELECT cm.*, p.title as post_title, p.slug as post_slug FROM comments cm LEFT JOIN posts p ON cm.post_id = p.id ORDER BY cm.created_at DESC"
+      "SELECT cm.id, cm.post_id, cm.author, cm.content, cm.created_at, p.title as post_title, p.slug as post_slug FROM comments cm LEFT JOIN posts p ON cm.post_id = p.id ORDER BY cm.created_at DESC"
     )
     .all<CommentWithPost>();
   return result.results;
@@ -334,6 +395,11 @@ export async function setConfig(db: D1Database, key: string, value: string): Pro
     .prepare("INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?")
     .bind(key, value, value)
     .run();
+}
+
+export async function setConfigValues(db: D1Database, values: Record<string, string>): Promise<void> {
+  const sql = "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?";
+  await db.batch(Object.entries(values).map(([key, value]) => db.prepare(sql).bind(key, value, value)));
 }
 
 export async function getFavicon(db: D1Database): Promise<string | null> {

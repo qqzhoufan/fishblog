@@ -18,24 +18,52 @@ function parseCookie(header: string | undefined): Record<string, string> {
   return cookies;
 }
 
-export async function generateToken(
-  username: string,
-  password: string
-): Promise<string> {
-  const payload = `fishblog:${username}:${await sha256(password)}`;
-  return sha256(payload);
+const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+// This table is deliberately additive: old posts, settings and API keys are untouched.
+async function ensureSessionsTable(db: D1Database): Promise<void> {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS admin_sessions (
+    token_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+  )`).run();
+}
+
+// Bind sessions to the current credentials without storing a password verifier.
+// The token itself is random and never persisted, even in hashed form by itself.
+async function sessionHash(token: string, env: Env): Promise<string> {
+  return sha256(`fishblog-session-v1:${token}:${env.ADMIN_USERNAME}:${await sha256(env.ADMIN_PASSWORD)}`);
+}
+
+export async function createAdminSession(env: Env): Promise<string> {
+  await ensureSessionsTable(env.DB);
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?").bind(now).run();
+  await env.DB.prepare("INSERT INTO admin_sessions (token_hash, expires_at) VALUES (?, ?)")
+    .bind(await sessionHash(token, env), now + SESSION_MAX_AGE_SECONDS).run();
+  return token;
+}
+
+export async function revokeAdminSession(c: Context<{ Bindings: Env }>): Promise<void> {
+  const token = parseCookie(c.req.header("cookie"))["fishblog_token"];
+  if (!token || !/^[0-9a-f]{64}$/.test(token)) return;
+  await ensureSessionsTable(c.env.DB);
+  await c.env.DB.prepare("DELETE FROM admin_sessions WHERE token_hash = ?")
+    .bind(await sessionHash(token, c.env)).run();
 }
 
 export async function adminAuth(c: Context<{ Bindings: Env }>, next: Next) {
+  if (!c.env.ADMIN_USERNAME || !c.env.ADMIN_PASSWORD) return c.redirect("/admin/login");
   const cookies = parseCookie(c.req.header("cookie"));
   const token = cookies["fishblog_token"];
-  if (!token) return c.redirect("/admin/login");
+  if (!token || !/^[0-9a-f]{64}$/.test(token)) return c.redirect("/admin/login");
 
-  const expected = await generateToken(
-    c.env.ADMIN_USERNAME,
-    c.env.ADMIN_PASSWORD
-  );
-  if (token !== expected) return c.redirect("/admin/login");
+  await ensureSessionsTable(c.env.DB);
+  const session = await c.env.DB.prepare(
+    "SELECT token_hash FROM admin_sessions WHERE token_hash = ? AND expires_at > ?"
+  ).bind(await sessionHash(token, c.env), Math.floor(Date.now() / 1000)).first();
+  if (!session) return c.redirect("/admin/login");
 
   await next();
 }

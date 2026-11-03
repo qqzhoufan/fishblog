@@ -1,254 +1,132 @@
 # FishBlog 🐟
 
-> A minimal blog system running on Cloudflare Workers. Zero server, zero cost, fully automated deployment.
+A lightweight blog built on Cloudflare Workers and D1. Write in Markdown, manage posts and comments in a browser, or connect an external writing tool through the REST API.
 
-[![Deploy to Cloudflare Workers](https://img.shields.io/badge/Deploy%20to-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://github.com/qqzhoufan/fishblog#-deploy-in-one-click)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[中文](README.md)
 
-[中文文档](README.md)
+## Features
 
----
+- **Writing and reading:** Markdown posts, drafts, publishing, pinned posts, excerpts, view counts, and image previews.
+- **Discovery:** Two-level categories, tags, search, archives, RSS, sitemap, and SEO metadata.
+- **Comments:** Visitors can comment without an account; administrators can review, delete, and reply to comments.
+- **Optional notifications:** Configure an email provider to notify the administrator of new comments and, with a visitor's consent, send reply notifications. Comments and replies work without email configuration.
+- **Site settings:** Set the title, description, footer, and favicon; light and dark themes follow the system setting.
+- **REST API:** Issue API keys with separate read, create, update, and delete permissions.
+- **Deployment and security:** GitHub Actions deployment, expiring and revocable admin sessions, login and comment rate limits, and sanitized HTML rendering.
 
-## ✨ Features
+FishBlog does not require a paid service. A low-traffic site may fit within Cloudflare's free allowances. Email is disabled by default; provider quotas, domain costs, and overage policies depend on your account and should be checked before enabling it.
 
-| | Feature | Description |
-|---|---------|-------------|
-| 📝 | **Markdown Editor** | Built-in admin panel with Markdown editing and instant publishing |
-| 📌 | **Pinned Posts** | Pin posts from the admin panel, shown first on the homepage |
-| 💬 | **Guest Comments** | Comment without registration, built-in anti-spam, manageable in admin |
-| 👁️ | **View Counts** | Automatic read counts displayed on every post |
-| 🏷️ | **Categories & Tags** | Two-level category hierarchy + freeform tags, sidebar filtering |
-| 🔍 | **Full-text Search** | Fuzzy search across titles, content, and excerpts |
-| 🎨 | **Adaptive Theme** | Dark/light mode follows system preference |
-| 🔐 | **Secure Auth** | Admin password managed via Cloudflare Secrets |
-| 🔑 | **REST API** | Built-in API key system with granular permissions for external integrations |
-| 📡 | **RSS Feed** | Built-in `/feed.xml` |
-| 🔎 | **SEO Ready** | Auto-generated `sitemap.xml`, `robots.txt`, canonical & OG tags |
-| 🖼️ | **Custom Favicon** | Upload favicon from admin settings |
-| ⚙️ | **Site Settings** | Visual configuration for blog title, description, footer |
-| 📦 | **Zero Config** | D1 database auto-created, tables auto-initialized on first visit |
-| 🚀 | **Auto Deploy** | Push to main = deployed, GitHub Actions handles everything |
-| 🌍 | **Global CDN** | Runs on Cloudflare's 300+ edge nodes worldwide |
-| 💰 | **Completely Free** | Workers Free: 100K requests/day, D1 Free: 5GB storage |
+## Deploy
 
-## 🛠 Tech Stack
+1. Fork this repository.
+2. Obtain your Cloudflare Account ID and create an API token with Workers and D1 edit permissions.
+3. In your fork, open **Settings → Secrets and variables → Actions** and add:
 
-- **Runtime** — [Cloudflare Workers](https://workers.cloudflare.com/)
-- **Framework** — [Hono](https://hono.dev) (lightweight web framework for edge runtimes)
-- **Database** — [Cloudflare D1](https://developers.cloudflare.com/d1/) (serverless SQLite)
-- **Rendering** — Server-side HTML (SSR), Markdown via [marked](https://github.com/markedjs/marked)
-- **Fonts** — Inter + Noto Serif SC + JetBrains Mono
-- **CI/CD** — GitHub Actions + Wrangler CLI
+| GitHub Secret | Purpose |
+| --- | --- |
+| `CF_API_TOKEN` | Cloudflare API token |
+| `CF_ACCOUNT_ID` | Cloudflare Account ID |
+| `ADMIN_USERNAME` | Administrator username |
+| `ADMIN_PASSWORD` | Strong administrator password |
 
-## 🚀 Deploy in One Click
+Run **Deploy to Cloudflare Workers** in GitHub Actions or push to `main`. The workflow installs dependencies, runs checks, creates or finds `fishblog-db`, configures admin credentials, and deploys the Worker. Database tables are initialized on the first request.
 
-The entire process can be completed in your browser — no local tools required.
+| Page | Path |
+| --- | --- |
+| Home | `/` |
+| Admin | `/admin` |
+| RSS | `/feed.xml` |
+| Sitemap | `/sitemap.xml` |
 
-### Step 1: Fork the Repository
+Find your Worker URL in the Cloudflare dashboard and optionally add a custom domain. Before updating an existing blog, back up D1 and verify the upgrade against an isolated copy.
 
-Click the **Fork** button in the top right corner of this page.
+## Usage
 
-### Step 2: Get Cloudflare Credentials
+Sign in at `/admin` to create Markdown posts, publish or save drafts, pin posts, and manage categories and tags. Ordinary images in posts can be opened in a preview; images already linked to another URL retain their link behavior.
 
-**Get Account ID:**
-1. Log in to [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. Go to **Workers & Pages** in the left sidebar
-3. Copy the **Account ID** from the right sidebar
+HTML in posts and the footer is sanitized for display. Common Markdown, links, images, and tables are supported; scripts, event handlers, and embeds such as iframes are removed. The original stored content is not changed. Check custom HTML against a copy of existing content before upgrading.
 
-**Create API Token:**
-1. Go to [API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Click **Create Token**
-3. Use the **Edit Cloudflare Workers** template
-4. Under **Permissions**, click **+ Add more** and add:
-   - Account → **D1** → **Edit**
-5. Click **Continue to summary** → **Create Token**
-6. Copy the generated token
+Visitors can leave comments without registering. Use **Comments** in the admin panel to review, delete, or reply. Turning off comments does not delete existing ones. Email addresses are optional and used only for requested notifications. Under **Settings**, update the blog title, description, footer, or favicon (maximum 1.4 MB).
 
-### Step 3: Configure GitHub Secrets
+### Optional: email notifications
 
-In your forked repository:
+Email is disabled by default. FishBlog uses the [Resend](https://resend.com/) email API, which requires a Resend account, a verified sending domain, and an API key. Free plans have quotas, and a domain may cost money. Review [Resend's current pricing and limits](https://resend.com/pricing), including other applications sharing the account, before enabling it. FishBlog does not purchase or upgrade plans.
 
-1. Go to **Settings** → **Secrets and variables** → **Actions**
-2. Click **New repository secret** and add these 4 secrets:
+Add the following as GitHub Actions Secrets and run the deployment workflow, or set them directly as encrypted Secrets under the Worker's **Settings → Variables and Secrets** in Cloudflare:
 
-| Secret Name | Value | Description |
-|---|---|---|
-| `CF_API_TOKEN` | Token from previous step | Cloudflare API credential |
-| `CF_ACCOUNT_ID` | Account ID from previous step | Cloudflare account identifier |
-| `ADMIN_USERNAME` | e.g. `admin` | Blog admin username |
-| `ADMIN_PASSWORD` | A strong password | Blog admin password |
+| Secret | Purpose |
+| --- | --- |
+| `RESEND_API_KEY` | Resend API key with sending permission only; never commit it |
+| `MAIL_FROM` | Full sender address under a verified Resend domain, e.g. `blog@example.com` |
+| `SITE_URL` | Public blog URL, e.g. `https://blog.example.com`, used for email links |
+| `ADMIN_NOTIFY_EMAIL` | Administrator's new-comment recipient; omit for visitor reply notifications only |
 
-### Step 4: Trigger Deployment
+With the first three configured, visitors who provide an email and opt in can receive reply notifications. Configure the fourth to notify the administrator of new comments. The email provider receives the recipient address and message content; visitor emails are not exposed in public pages or the comments API.
 
-Either:
-- **Option A**: Push any commit to the `main` branch
-- **Option B**: Go to **Actions** tab → **Deploy to Cloudflare Workers** → **Run workflow**
+To limit usage, the site attempts at most 80 emails per UTC calendar day, including failed attempts. Failed delivery never rolls back a comment or reply. Pending and failed counts appear in **Comments**; new events trigger processing and an administrator can retry manually. There is no scheduled delivery job, so retries do not run automatically while the site is idle. Processing removes notification records older than seven days; emails that have already been attempted will not be resent after the safe retry window, and delivery is not guaranteed.
 
-GitHub Actions will automatically:
+To disable email, remove `RESEND_API_KEY` from the **Cloudflare Worker Secrets**, or run `wrangler secret delete RESEND_API_KEY`. If the GitHub Actions Secret was also configured, remove it from GitHub too to prevent a later deployment from restoring it. Removing it from GitHub alone does not remove the existing Cloudflare Secret. Existing comments, replies, and stored emails are retained.
 
-```
-✅ Install dependencies
-✅ Create D1 database (skip if exists)
-✅ Resolve and bind database ID
-✅ Set admin secrets
-✅ Deploy Worker to Cloudflare's edge network
-```
+## REST API
 
-### Step 5: Verify
+Create API keys under **API Keys** and grant only the required `read`, `create`, `update`, or `delete` permissions. Send `Authorization: Bearer YOUR_API_KEY` with each request. Read access also permits access to drafts, so share such keys only with trusted integrations.
 
-1. Open [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages**
-2. Click `fishblog` to find your URL (e.g. `https://fishblog.xxx.workers.dev`)
-3. Visit the link — you should see your blog homepage
-
-| Page | URL |
-|------|-----|
-| Blog Home | `https://fishblog.<your-subdomain>.workers.dev` |
-| Admin Panel | `https://fishblog.<your-subdomain>.workers.dev/admin` |
-| RSS Feed | `https://fishblog.<your-subdomain>.workers.dev/feed.xml` |
-
-> Database tables are auto-created on first visit (may take 1-2 seconds).
-
-### Step 6: Get Indexed by Search Engines (Recommended)
-
-After deploying, submit your site to search engines as soon as possible. This project auto-generates `/sitemap.xml` and `/robots.txt`, which can be submitted directly to speed up indexing:
-
-| Platform | URL | Notes |
-|----------|-----|-------|
-| **Bing Webmaster Tools** | https://www.bing.com/webmasters | Free and fastest (indexed within days); data can sync with Google |
-| **Google Search Console** | https://search.google.com/search-console | Reliable indexing, shows search performance |
-| **Baidu Search Resource Platform** | https://ziyuan.baidu.com | Key for Chinese traffic; use "manual submission" to push new post URLs |
-
-**Tips:**
-
-1. **Bind a custom domain first** (e.g. `blog.example.com`) — `.workers.dev` subdomains are de-prioritized by search engines. See "Custom Domain" below.
-2. Add your site on each platform, verify ownership (DNS verification recommended, no code changes), then submit `https://your-domain.com/sitemap.xml`.
-3. **After publishing each new post**, manually submit the new post URL in Baidu's "manual submission" to speed up indexing, or automate it in your publishing flow.
-4. Cloudflare's edge network is globally reachable, but Baidu's crawler may take longer — allow 1–4 weeks.
-
-> The `<head>` already includes canonical, OG tags, and meta description; post pages use the excerpt as description. Basic SEO is done.
-
-### Custom Domain (Optional)
-
-1. Cloudflare Dashboard → **Workers & Pages** → click `fishblog`
-2. **Settings** → **Domains & Routes** → **Add** → **Custom Domain**
-3. Enter your domain (e.g. `blog.example.com`) — DNS and HTTPS are configured automatically
-
-## 📖 Usage
-
-### Writing Posts
-
-1. Go to `/admin` and log in
-2. Click **+ 新建文章** (New Post)
-3. Fill in title, slug (URL path, e.g. `hello-world`)
-4. Choose a category (optional), add tags (comma-separated, optional)
-5. Write content in Markdown, choose **Publish** or **Draft**
-6. Click **保存** (Save)
-
-### Categories
-
-Go to Admin → **分类** (Categories) to create parent and child categories. The homepage sidebar shows the category tree for filtering.
-
-### Tags
-
-Add comma-separated tags to posts (e.g. `tech, cloudflare, tutorial`). Tags appear on post pages as clickable `#tag` links.
-
-### Site Settings
-
-Admin → **设置** (Settings): change blog title, description, footer text, and upload a favicon.
-
-### REST API
-
-Generate API keys in Admin → **API Keys** with granular permissions.
-
-Include `Authorization: Bearer YOUR_API_KEY` in request headers.
-
-| Method | Path | Permission | Description |
-|--------|------|------------|-------------|
-| `GET` | `/api/posts` | read | List posts (`?page=`, `?category_id=`, `?all=true`) |
-| `GET` | `/api/posts/:slug` | read | Get post by slug (includes tags) |
-| `GET` | `/api/posts/:slug/comments` | read | Get comments for a post |
-| `POST` | `/api/posts` | create | Create post (supports `is_pinned`) |
-| `PUT` | `/api/posts/:id` | update | Update post (supports `is_pinned`) |
-| `PUT` | `/api/posts/:id` | update | Update post |
-| `DELETE` | `/api/posts/:id` | delete | Delete post |
-| `GET` | `/api/categories` | read | Get category tree |
-
-**Create post example:**
+| Method | Path | Permission | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/posts` | `read` | List posts; supports `page`, `category_id`, `all=true` |
+| `GET` | `/api/posts/:slug` | `read` | Get a post and tags |
+| `GET` | `/api/posts/:slug/comments` | `read` | Get comments |
+| `POST` | `/api/posts` | `create` | Create a post |
+| `PUT` | `/api/posts/:id` | `update` | Update a post |
+| `DELETE` | `/api/posts/:id` | `delete` | Delete a post |
+| `GET` | `/api/categories` | `read` | Get the category tree |
+| `POST` | `/api/categories` | `create` | Create a category |
+| `PUT` | `/api/categories/:id` | `update` | Update a category |
+| `DELETE` | `/api/categories/:id` | `delete` | Delete a category |
 
 ```bash
 curl -X POST https://your-blog.workers.dev/api/posts \
-  -H "Authorization: Bearer fb_your_key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Hello World",
-    "slug": "hello-world",
-    "content": "# Hello\n\nThis is my first post.",
-    "tags": ["tech", "blog"],
-    "published": 1
-  }'
+  -H 'Authorization: Bearer YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Hello World","slug":"hello-world","content":"# Hello","tags":["blog"],"published":1}'
 ```
 
-## 💻 Local Development
+## Local development and tests
+
+Requires Node.js 22:
 
 ```bash
 git clone https://github.com/qqzhoufan/fishblog.git
 cd fishblog
 cp wrangler.toml.example wrangler.toml
-npm install
-echo -e 'ADMIN_USERNAME=admin\nADMIN_PASSWORD=123456' > .dev.vars
+npm ci
+printf 'ADMIN_USERNAME=admin\nADMIN_PASSWORD=local-password\n' > .dev.vars
 npm run dev
 ```
 
-Visit http://localhost:8787 — hot reload enabled.
+Visit `http://localhost:8787`. Do not commit `.dev.vars` or Wrangler's local data. The example D1 ID is a placeholder; replace it before deploying to your account.
 
-## 📁 Project Structure
-
-```
-fishblog/
-├── src/
-│   ├── index.ts              # Entry point, auto-migration middleware
-│   ├── types.ts              # TypeScript type definitions
-│   ├── routes/
-│   │   ├── blog.ts           # Frontend: home, posts, archive, search, tags, RSS
-│   │   ├── admin.ts          # Admin: posts, categories, API keys, settings
-│   │   └── api.ts            # REST API for external integrations
-│   ├── templates/
-│   │   ├── layout.ts         # Frontend template (responsive + dark/light + sidebar)
-│   │   └── admin.ts          # Admin template
-│   ├── middleware/
-│   │   └── auth.ts           # Cookie auth + API key verification
-│   └── db/
-│       ├── migrate.ts        # Incremental auto-migration
-│       └── queries.ts        # Database query layer
-├── .github/workflows/
-│   └── deploy.yml            # GitHub Actions auto-deploy pipeline
-├── wrangler.toml.example     # Wrangler config template
-├── tsconfig.json
-├── package.json
-├── README.md                 # 中文文档
-└── README_EN.md              # English documentation
+```bash
+npm run typecheck
+npm test
 ```
 
-## ❓ FAQ
+Tests use isolated temporary databases and do not access production data. The `main` deployment workflow runs these checks as well.
 
-**Q: Is it really free?**
-A: Yes. Cloudflare Workers Free Plan: 100K requests/day. D1 Free Plan: 5GB storage + 5M row reads/day. More than enough for personal blogs.
+## Backup and upgrades
 
-**Q: Is my data secure?**
-A: Admin passwords are stored in Cloudflare Secrets (encrypted). Auth uses SHA-256 hashing + HttpOnly cookies. API keys are also stored as hashes only.
+Export a D1 backup from the Cloudflare dashboard or with Wrangler. Before deploying an update, restore a copy in an isolated environment and verify existing posts, custom HTML, login, comments, and API integrations. Store admin credentials, API keys, and D1 backups securely.
 
-**Q: How much traffic can it handle?**
-A: Workers run on 300+ edge nodes globally. Free plan: 100K requests/day. Paid plans: unlimited.
+## Project structure
 
-**Q: How to backup data?**
-A: Export from Cloudflare Dashboard → D1 → fishblog-db, or use `wrangler d1 export`.
-
-**Q: How to change admin password?**
-A: Update `ADMIN_PASSWORD` in GitHub Settings → Secrets, then re-run the Actions workflow.
-
-**Q: How to integrate AI writing tools?**
-A: Generate an API key with `create` permission in the admin panel, then use `POST /api/posts` to publish articles programmatically.
-
-## License
-
-[MIT](LICENSE)
+```text
+src/
+  db/           Database initialization and queries
+  middleware/   Admin sessions and request rate limits
+  routes/       Blog, admin, and API routes
+  services/     Optional email notifications and outbox
+  templates/    Page templates and HTML sanitization
+  index.ts      Worker entry point
+tests/          Isolated database and Worker regression tests
+.github/        GitHub Actions deployment workflow
+```
