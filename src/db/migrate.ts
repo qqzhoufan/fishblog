@@ -1,11 +1,10 @@
 export async function autoMigrate(db: D1Database): Promise<void> {
-  // Check if base tables exist
-  let tablesExist = true;
-  try {
-    await db.prepare("SELECT 1 FROM post_tags LIMIT 1").first();
-  } catch {
-    tablesExist = false;
-  }
+  // Check all base tables: a previous initialization can fail after creating
+  // post_tags but before creating another table.
+  const tableCount = await db.prepare(
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('posts', 'categories', 'api_keys', 'config', 'tags', 'post_tags', 'comments', 'comment_replies', 'comment_contacts')"
+  ).first<{ count: number }>();
+  const tablesExist = tableCount?.count === 9;
 
   if (!tablesExist) {
     const migrations = [
@@ -25,7 +24,6 @@ export async function autoMigrate(db: D1Database): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_posts_slug ON posts(slug)`,
       `CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(published, created_at)`,
-      `CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category_id)`,
 
       // Categories
       `CREATE TABLE IF NOT EXISTS categories (
@@ -80,15 +78,21 @@ export async function autoMigrate(db: D1Database): Promise<void> {
         FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
       )`,
       `CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id)`,
+      // Separate tables preserve the existing comments and public API shape.
+      `CREATE TABLE IF NOT EXISTS comment_replies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_comment_replies_comment ON comment_replies(comment_id)`,
+      `CREATE TABLE IF NOT EXISTS comment_contacts (
+        comment_id INTEGER PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+        email TEXT NOT NULL
+      )`,
     ];
 
-    for (const sql of migrations) {
-      try {
-        await db.prepare(sql).run();
-      } catch {
-        // ignore errors for idempotent statements (e.g. column already exists)
-      }
-    }
+    for (const sql of migrations) await db.prepare(sql).run();
   }
 
   // ── Incremental upgrades (always run, idempotent) ──
@@ -100,7 +104,9 @@ export async function autoMigrate(db: D1Database): Promise<void> {
       try {
         await db.prepare(`ALTER TABLE posts ADD COLUMN ${definition}`).run();
       } catch {
-        // column might already exist
+        // Another concurrent request may have added it. Recheck rather than
+        // masking a real database error.
+        await db.prepare(`SELECT ${column} FROM posts LIMIT 1`).first();
       }
     }
   }
@@ -109,9 +115,8 @@ export async function autoMigrate(db: D1Database): Promise<void> {
   await addColumn("is_pinned", "is_pinned INTEGER NOT NULL DEFAULT 0");
   await addColumn("views", "views INTEGER NOT NULL DEFAULT 0");
 
-  try {
-    await db.prepare("CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL, author TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE)").run();
-  } catch {
-    // already exists
+  if (!tablesExist) {
+    // Older databases may not have category_id until the upgrade above.
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category_id)").run();
   }
 }

@@ -10,6 +10,8 @@ BLOG_DESCRIPTION = "A minimal blog on Cloudflare Workers"
 # Secrets (set via Cloudflare Dashboard or `wrangler secret put`):
 #   ADMIN_USERNAME  - admin login username
 #   ADMIN_PASSWORD  - admin login password
+# Optional email notification secrets:
+#   RESEND_API_KEY, MAIL_FROM, SITE_URL, ADMIN_NOTIFY_EMAIL
 
 [[d1_databases]]
 binding = "DB"

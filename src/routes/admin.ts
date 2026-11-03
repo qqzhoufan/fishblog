@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../types.ts";
-import { sha256, adminAuth, generateToken } from "../middleware/auth.ts";
+import { sha256, adminAuth, createAdminSession, revokeAdminSession } from "../middleware/auth.ts";
+import { checkRateLimit } from "../middleware/rate-limit.ts";
+import { dispatchNotification, dispatchPendingNotifications } from "../services/notification-dispatch.ts";
+import { adminNotificationConfigured, getNotificationStats, notificationConfigured, retryFailedNotifications } from "../services/notifications.ts";
 import {
   loginPage, postListPage, postEditorPage,
   categoryListPage, categoryEditorPage,
@@ -10,9 +13,9 @@ import {
   getAllPosts, getPostById, createPost, updatePost, deletePost,
   getCategoryTree, getAllCategories, createCategory, updateCategory, deleteCategory,
   getAllApiKeys, createApiKey, deleteApiKey,
-  getConfig, setConfig,
-  getTagsForPost, syncPostTags,
-  getAllComments, deleteComment,
+  getConfig, setConfigValues,
+  getTagsForPost,
+  getAllComments, deleteComment, getCommentNotificationInfo, createCommentReply,
 } from "../db/queries.ts";
 
 const admin = new Hono<{ Bindings: Env }>();
@@ -22,6 +25,11 @@ const admin = new Hono<{ Bindings: Env }>();
 admin.get("/login", (c) => c.html(loginPage()));
 
 admin.post("/login", async (c) => {
+  if (!c.env.ADMIN_USERNAME || !c.env.ADMIN_PASSWORD) {
+    return c.html(loginPage("管理员账号尚未配置"), 503);
+  }
+  const retryAfter = await checkRateLimit(c, "login", 30, 10 * 60);
+  if (retryAfter) return c.html(loginPage("尝试次数过多，请稍后再试"), 429, { "Retry-After": String(retryAfter) });
   const body = await c.req.parseBody();
   const username = (body.username as string) || "";
   const password = (body.password as string) || "";
@@ -30,22 +38,25 @@ admin.post("/login", async (c) => {
     return c.html(loginPage("用户名或密码错误"), 401);
   }
 
-  const token = await generateToken(username, password);
+  const token = await createAdminSession(c.env);
+  const secure = new URL(c.req.url).protocol === "https:" ? "; Secure" : "";
   return new Response(null, {
     status: 302,
     headers: {
       Location: "/admin",
-      "Set-Cookie": `fishblog_token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800`,
+      "Set-Cookie": `fishblog_token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800${secure}`,
     },
   });
 });
 
-admin.get("/logout", () =>
-  new Response(null, {
+admin.get("/logout", async (c) => {
+  await revokeAdminSession(c);
+  const secure = new URL(c.req.url).protocol === "https:" ? "; Secure" : "";
+  return new Response(null, {
     status: 302,
-    headers: { Location: "/admin/login", "Set-Cookie": "fishblog_token=; Path=/; HttpOnly; Max-Age=0" },
-  })
-);
+    headers: { Location: "/admin/login", "Set-Cookie": `fishblog_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}` },
+  });
+});
 
 admin.use("/*", adminAuth);
 
@@ -68,14 +79,12 @@ function parseTags(raw: string): string[] {
 admin.post("/new", async (c) => {
   const body = await c.req.parseBody();
   const catId = body.category_id ? parseInt(body.category_id as string) : null;
-  const result = await createPost(c.env.DB, {
+  await createPost(c.env.DB, {
     title: body.title as string, slug: body.slug as string,
     content: body.content as string, excerpt: (body.excerpt as string) || "",
     published: parseInt(body.published as string) || 0, category_id: catId,
     is_pinned: body.is_pinned ? 1 : 0,
-  });
-  const postId = result.meta.last_row_id;
-  if (postId) await syncPostTags(c.env.DB, postId, parseTags(body.tags as string));
+  }, parseTags(body.tags as string));
   return c.redirect("/admin");
 });
 
@@ -97,8 +106,7 @@ admin.post("/edit/:id", async (c) => {
     content: body.content as string, excerpt: (body.excerpt as string) || "",
     published: parseInt(body.published as string) || 0, category_id: catId,
     is_pinned: body.is_pinned ? 1 : 0,
-  });
-  await syncPostTags(c.env.DB, id, parseTags(body.tags as string));
+  }, parseTags(body.tags as string));
   return c.redirect("/admin");
 });
 
@@ -111,11 +119,48 @@ admin.post("/delete/:id", async (c) => {
 
 admin.get("/comments", async (c) => {
   const comments = await getAllComments(c.env.DB);
-  return c.html(commentListPage(comments));
+  let notificationStatus: Awaited<ReturnType<typeof getNotificationStats>> | null = null;
+  if (notificationConfigured(c.env)) {
+    try { notificationStatus = await getNotificationStats(c.env); } catch { /* Keep comment management usable. */ }
+  }
+  return c.html(commentListPage(comments, {
+    configured: notificationConfigured(c.env),
+    adminConfigured: adminNotificationConfigured(c.env),
+    stats: notificationStatus,
+  }));
+});
+
+admin.post("/comments/notifications/retry", async (c) => {
+  if (notificationConfigured(c.env)) {
+    try {
+      await retryFailedNotifications(c.env);
+      dispatchPendingNotifications(c);
+    } catch {
+      return c.text("无法处理邮件通知，请稍后再试。", 503);
+    }
+  }
+  return c.redirect("/admin/comments");
 });
 
 admin.post("/comments/delete/:id", async (c) => {
   await deleteComment(c.env.DB, parseInt(c.req.param("id")));
+  return c.redirect("/admin/comments");
+});
+
+admin.post("/comments/reply/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isSafeInteger(id) || id <= 0) return c.text("评论不存在", 404);
+  const comment = await getCommentNotificationInfo(c.env.DB, id);
+  if (!comment) return c.text("评论不存在", 404);
+  const body = await c.req.parseBody();
+  const content = typeof body.content === "string" ? body.content.trim() : "";
+  if (!content || content.length > 2000) return c.text("回复内容应为 1 至 2000 个字符", 400);
+  const result = await createCommentReply(c.env.DB, id, content);
+  const replyId = result.meta?.last_row_id;
+  if (comment.email && replyId) await dispatchNotification(c, {
+    kind: "reply", eventId: String(replyId), commentId: id, recipient: comment.email,
+    postTitle: comment.post_title, postSlug: comment.post_slug, author: comment.author, content,
+  });
   return c.redirect("/admin/comments");
 });
 
@@ -217,19 +262,29 @@ admin.get("/settings", async (c) => {
 admin.post("/settings", async (c) => {
   const body = await c.req.parseBody();
 
-  await setConfig(c.env.DB, "blog_title", (body.blog_title as string) || "FishBlog");
-  await setConfig(c.env.DB, "blog_description", (body.blog_description as string) || "");
-  await setConfig(c.env.DB, "blog_footer", (body.blog_footer as string) || "Powered by FishBlog");
-  await setConfig(c.env.DB, "comments_enabled", body.comments_enabled ? "1" : "0");
+  const values: Record<string, string> = {
+    blog_title: (body.blog_title as string) || "FishBlog",
+    blog_description: (body.blog_description as string) || "",
+    blog_footer: (body.blog_footer as string) || "Powered by FishBlog",
+    comments_enabled: body.comments_enabled ? "1" : "0",
+  };
 
   const faviconFile = body.favicon;
   if (faviconFile && faviconFile instanceof File && faviconFile.size > 0) {
-    const buffer = await faviconFile.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-    const dataUrl = `data:${faviconFile.type};base64,${base64}`;
-    await setConfig(c.env.DB, "favicon", dataUrl);
+    // Base64 expands data by one third; leave room below D1's 2,000,000-byte row limit.
+    if (faviconFile.size > 1_400_000) {
+      const config = await getConfig(c.env.DB);
+      return c.html(settingsPage({ ...config, ...values }, false, "图标文件过大，请选择不超过 1.4 MB 的文件。其他设置尚未保存。"), 400);
+    }
+    const bytes = new Uint8Array(await faviconFile.arrayBuffer());
+    const chunks: string[] = [];
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      chunks.push(String.fromCharCode(...bytes.subarray(i, i + 0x8000)));
+    }
+    values.favicon = `data:${faviconFile.type};base64,${btoa(chunks.join(""))}`;
   }
 
+  await setConfigValues(c.env.DB, values);
   return c.redirect("/admin/settings?saved=1");
 });
 

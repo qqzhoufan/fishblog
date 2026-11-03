@@ -1,4 +1,6 @@
 import type { Category } from "../types.ts";
+import { sanitizeContent } from "./sanitize.ts";
+import { imageViewerScript, imageViewerStyles } from "./image-viewer.ts";
 
 export function layout(
   title: string,
@@ -121,6 +123,7 @@ export function layout(
     .article .content pre code { background: none; padding: 0; }
     .article .content blockquote { border-left: 3px solid var(--accent); padding-left: 1rem; color: var(--muted); margin-bottom: 1.25rem; }
     .article .content img { max-width: 100%; border-radius: var(--radius); }
+    ${imageViewerStyles}
     .article .content ul, .article .content ol { padding-left: 1.5rem; margin-bottom: 1.25rem; }
     .article .content li { margin-bottom: .25rem; }
 
@@ -160,6 +163,8 @@ export function layout(
     .comment-head { display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); margin-bottom: .35rem; }
     .comment-head strong { color: var(--fg); }
     .comment-item p { font-size: .95rem; line-height: 1.65; word-break: break-word; }
+    .comment-replies { margin-top: .8rem; padding-left: .9rem; border-left: 2px solid var(--border); }
+    .comment-reply + .comment-reply { margin-top: .75rem; }
     .comment-empty { color: var(--muted); font-size: .9rem; margin-bottom: 1.25rem; }
     .comment-closed { margin-top: 3rem; color: var(--muted); font-size: .9rem; text-align: center; padding: 2rem 0; border-top: 1px solid var(--border); font-family: var(--font-sans); }
     .comment-form { display: flex; flex-direction: column; gap: .6rem; max-width: 480px; }
@@ -169,6 +174,8 @@ export function layout(
     }
     .comment-form input:focus, .comment-form textarea:focus { outline: none; border-color: var(--accent); }
     .comment-form textarea { min-height: 100px; resize: vertical; }
+    .comment-form .comment-notify { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .85rem; cursor: pointer; }
+    .comment-form .comment-notify input { width: auto; margin: 0; padding: 0; accent-color: var(--accent); }
     .comment-form button {
       align-self: flex-start; padding: .45rem 1.25rem; border: none; border-radius: var(--radius);
       background: var(--accent); color: #fff; font-size: .9rem; cursor: pointer; font-weight: 600;
@@ -198,10 +205,11 @@ export function layout(
     <div class="main-content">${content}</div>
     ${sidebar}
   </div>
-  <footer>${config.blog_footer || "Powered by FishBlog"}</footer>
+  <footer>${sanitizeContent(config.blog_footer || "Powered by FishBlog")}</footer>
   <script>
     var el = document.getElementById('ct-ts');
     if (el) el.value = Date.now().toString();
+    ${imageViewerScript}
   </script>
 </body>
 </html>`;

@@ -1,302 +1,145 @@
 # FishBlog 🐟
 
-> 一个极简的博客系统，运行在 Cloudflare Workers 上。零服务器、零成本、全自动部署。
-
-[![Deploy to Cloudflare Workers](https://img.shields.io/badge/Deploy%20to-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://github.com/qqzhoufan/fishblog#-一键部署)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+一个运行在 Cloudflare Workers 和 D1 上的轻量博客。使用 Markdown 写作，通过浏览器管理文章、分类和评论，也可以用 REST API 接入其他写作工具。
 
 [English](README_EN.md)
 
----
+## 功能
 
-## ✨ 特性
+- **写作与阅读**：Markdown 文章、草稿与发布、置顶、摘要、阅读量和图片预览。
+- **组织与发现**：两级分类、标签、搜索、归档、RSS，以及站点地图和 SEO 元数据。
+- **评论互动**：游客无需注册即可留言；管理员可在后台查看、删除和回复评论。
+- **可选通知**：配置邮件服务后，可收到新留言通知；访客可以自愿留下邮箱，接收管理员回复通知。未配置时仍可正常使用评论和回复。
+- **站点管理**：修改标题、描述、页脚和站点图标；支持随系统切换深浅色主题。
+- **开放接口**：为 API Key 分别授予读取、新建、修改或删除权限。
+- **部署与安全**：支持 GitHub Actions 部署，管理员会话可过期和撤销，评论和登录有频率限制，文章 HTML 在显示时会进行安全过滤。
 
-| | 功能 | 说明 |
-|---|------|------|
-| 📝 | **Markdown 写作** | 内置管理后台，Markdown 编辑、实时发布 |
-| 📌 | **文章置顶** | 后台一键置顶，首页优先展示 |
-| 💬 | **游客评论** | 无需注册即可评论，内置反垃圾机制，后台可管理 |
-| 👁️ | **浏览量统计** | 自动记录并展示每篇文章阅读量 |
-| 🏷️ | **分类 & 标签** | 两级分类体系 + 自由标签，首页侧边栏按分类筛选 |
-| 🔍 | **全文搜索** | 按标题、正文、摘要模糊搜索 |
-| 🎨 | **主题自适应** | 深色/浅色模式跟随系统自动切换 |
-| 🔐 | **安全认证** | 管理员密码通过 Cloudflare Secrets 加密管理 |
-| 🔑 | **REST API** | 内置 API Key 系统，细粒度权限控制，可接入外部工具自动发文 |
-| 📡 | **RSS 订阅** | 内置 `/feed.xml` |
-| 🔎 | **SEO 优化** | 自动生成 `sitemap.xml`、`robots.txt`、canonical 与 OG 标签 |
-| 🖼️ | **自定义图标** | 后台上传 Favicon，即时生效 |
-| ⚙️ | **站点设置** | 后台可视化修改博客标题、描述、底部文字 |
-| 📦 | **零配置** | D1 数据库自动创建，表结构首次访问自动初始化 |
-| 🚀 | **全自动部署** | Push 到 main 分支即部署，GitHub Actions 一站式完成 |
-| 🌍 | **全球加速** | 运行在 Cloudflare 边缘网络 300+ 节点 |
-| 💰 | **完全免费** | Workers Free Plan 每天 10 万次请求，D1 Free 5GB 存储 |
+FishBlog 本身不要求购买付费服务，低流量网站通常可以使用 Cloudflare 的免费额度。邮件通知默认关闭，启用时需要自行配置邮件服务；免费额度、域名费用和超额政策取决于服务商及账户设置，请在启用前确认。
 
-## 🛠 技术栈
+## 快速部署
 
-- **运行时** — [Cloudflare Workers](https://workers.cloudflare.com/)
-- **框架** — [Hono](https://hono.dev)（轻量 Web 框架，专为边缘运行时设计）
-- **数据库** — [Cloudflare D1](https://developers.cloudflare.com/d1/)（基于 SQLite 的无服务器数据库）
-- **渲染** — 服务端 HTML 直出（SSR），[marked](https://github.com/markedjs/marked) 解析 Markdown
-- **字体** — Inter + Noto Serif SC + JetBrains Mono
-- **CI/CD** — GitHub Actions + Wrangler CLI
+### 1. 准备仓库和 Cloudflare 凭据
 
-## 🚀 一键部署
+1. Fork 本仓库。
+2. 在 Cloudflare Dashboard 获取账户 ID（Account ID）。
+3. 创建 Cloudflare API Token，授予 Workers 编辑和 D1 编辑权限。
+4. 在 Fork 后的 GitHub 仓库打开 **Settings → Secrets and variables → Actions**，添加：
 
-整个过程无需安装任何本地工具，全部在浏览器中完成。
+| GitHub Secret | 用途 |
+| --- | --- |
+| `CF_API_TOKEN` | Cloudflare API Token |
+| `CF_ACCOUNT_ID` | Cloudflare Account ID |
+| `ADMIN_USERNAME` | 管理员用户名 |
+| `ADMIN_PASSWORD` | 管理员强密码 |
 
-### 第一步：Fork 仓库
+### 2. 部署并访问
 
-点击本页右上角的 **Fork** 按钮，将仓库复制到你的 GitHub 账号下。
+在 GitHub Actions 中运行 **Deploy to Cloudflare Workers**，或推送到 `main` 分支。工作流会安装依赖、运行检查、创建或查找 `fishblog-db`、配置管理员凭据并部署 Worker。首次访问时自动初始化数据库表。
 
-### 第二步：获取 Cloudflare 凭据
+| 页面 | 路径 |
+| --- | --- |
+| 首页 | `/` |
+| 管理后台 | `/admin` |
+| RSS | `/feed.xml` |
+| 站点地图 | `/sitemap.xml` |
 
-**获取 Account ID：**
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. 进入左侧 **Workers & Pages**
-3. 右侧边栏可以看到 **Account ID**，复制它
+在 Cloudflare Dashboard 的 Workers 页面可查看站点地址，也可按需绑定自定义域名。部署已有博客的新版本前，请先备份 D1，并在隔离环境验证现有数据和内容展示。
 
-**创建 API Token：**
-1. 前往 [API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. 点击 **Create Token**
-3. 选择 **Edit Cloudflare Workers** 模板
-4. 在 **Account Resources** 下确认选中你的账号
-5. 在 **Permissions** 部分点击 **+ Add more**，添加：
-   - Account → **D1** → **Edit**
-6. 点击 **Continue to summary** → **Create Token**
-7. 复制生成的 Token
-
-### 第三步：配置 GitHub Secrets
-
-在你 fork 的仓库中：
-
-1. 进入 **Settings** → **Secrets and variables** → **Actions**
-2. 点击 **New repository secret**，依次添加以下 4 个：
-
-| Secret 名称 | 值 | 说明 |
-|---|---|---|
-| `CF_API_TOKEN` | 上一步创建的 Token | Cloudflare API 凭证 |
-| `CF_ACCOUNT_ID` | 上一步复制的 ID | Cloudflare 账号标识 |
-| `ADMIN_USERNAME` | 自定义，如 `admin` | 博客管理后台用户名 |
-| `ADMIN_PASSWORD` | 自定义强密码 | 博客管理后台密码 |
-
-### 第四步：触发部署
-
-两种方式，任选其一：
-
-- **方式 A**：Push 任意 commit 到 `main` 分支
-- **方式 B**：进入仓库的 **Actions** 页面 → 选择 **Deploy to Cloudflare Workers** → 点击 **Run workflow**
-
-GitHub Actions 会自动完成以下全部操作：
-
-```
-✅ 安装依赖
-✅ 创建 D1 数据库（已存在则跳过）
-✅ 解析并绑定数据库 ID
-✅ 设置管理员 Secrets
-✅ 部署 Worker 到 Cloudflare 边缘网络
-```
-
-### 第五步：验证部署
-
-1. 打开 [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages**
-2. 点击 `fishblog`，右侧可以看到访问链接（形如 `https://fishblog.xxx.workers.dev`）
-3. 点击链接，看到博客首页即部署成功
-
-| 页面 | 地址 |
-|------|------|
-| 博客首页 | `https://fishblog.<your-subdomain>.workers.dev` |
-| 管理后台 | `https://fishblog.<your-subdomain>.workers.dev/admin` |
-| RSS 订阅 | `https://fishblog.<your-subdomain>.workers.dev/feed.xml` |
-| 站点地图 | `https://fishblog.<your-subdomain>.workers.dev/sitemap.xml` |
-
-> `<your-subdomain>` 是你的 Cloudflare Workers 子域名。查看方式：Cloudflare Dashboard → Workers & Pages → 右侧边栏的 **Subdomain**。
-
-> 首次访问时数据库表会自动创建，可能需要 1-2 秒加载。
-
-### 第六步：让搜索引擎尽快收录（推荐）
-
-部署完成后建议尽快向搜索引擎提交站点。本项目已自动生成 `/sitemap.xml` 和 `/robots.txt`，以下平台均可直接提交 sitemap 加快收录：
-
-| 平台 | 地址 | 特点 |
-|------|------|------|
-| **Bing Webmaster Tools** | https://www.bing.com/webmasters | 免费、收录最快（几天内），且数据可与 Google 互通 |
-| **Google Search Console** | https://search.google.com/search-console | 收录稳定，可查看搜索表现 |
-| **百度搜索资源平台** | https://ziyuan.baidu.com | 国内流量关键，建议同时做"普通收录-手动提交"推送新文章 URL |
-
-**操作要点：**
-
-1. **优先绑定自定义域名**（如 `blog.example.com`），`.workers.dev` 子域名会被搜索引擎降低权重。绑定方法见下方"绑定自定义域名"。
-2. 在各平台添加站点后，验证所有权（推荐 DNS 验证，无需改代码），然后提交 `https://你的域名/sitemap.xml`。
-3. **每次发新文章后**，在百度站长"普通收录-手动提交"里粘贴新文章 URL，可显著加快收录；或把该接口接入自动发文流程。
-4. 国内服务器不可用不影响收录，Cloudflare 边缘节点全球可达，但百度爬虫可能需要更长时间，耐心等待 1-4 周。
-
-> 提示：首页 `<head>` 已包含 canonical、OG 标签和 meta description，文章页 description 自动取摘要，SEO 基础工作已完成。
-
-### 绑定自定义域名（可选）
-
-1. 进入 Cloudflare Dashboard → **Workers & Pages** → 点击 `fishblog`
-2. 进入 **Settings** → **Domains & Routes**
-3. 点击 **Add** → **Custom Domain**
-4. 输入你的域名（如 `blog.example.com`），Cloudflare 会自动配置 DNS 和 HTTPS
-
-## 📖 使用指南
+## 使用指南
 
 ### 写文章
 
-1. 访问 `/admin`，输入用户名和密码登录
-2. 点击 **+ 新建文章**
-3. 填写标题、Slug（URL 路径，如 `hello-world`）
-4. 选择分类（可选），填写标签（逗号分隔，如 `技术, Cloudflare, 教程`，可留空）
-5. 填写摘要（可选），在正文区域用 Markdown 写作
-6. 选择 **发布** 或 **草稿**，点击 **保存**
+登录 `/admin`，选择“新建文章”，填写标题、Slug、Markdown 正文及可选的摘要、分类和标签，再选择发布或保存为草稿。文章可置顶；前台普通图片可点击预览，原本带链接的图片保留链接行为。
 
-> 勾选 **置顶** 后文章会在首页优先展示（置顶徽章标识）。
+文章和页脚中的 HTML 会在显示时过滤：常见 Markdown、链接、图片和表格会保留，脚本、事件属性及 iframe 等嵌入不会执行或显示。数据库中的原始内容不会因显示过滤而更改；使用自定义 HTML 的已有博客应先用内容副本检查显示效果。
 
-### 评论管理
+### 管理评论
 
-读者无需注册即可在文章下方评论（昵称 + 内容）。内置反垃圾机制：隐藏蜜罐字段 + 提交时间校验。进入后台 → **评论** 可查看和删除评论。
+访客可以在文章下方使用昵称留言，无需注册。进入后台的“评论”页面可以查看、删除和回复留言；关闭游客评论不会删除已有内容。留言和回复通知属于可选功能，邮箱只用于通知，不应作为公开评论信息展示。
 
-### 分类管理
+### 可选：开启邮件通知
 
-进入后台 → **分类**，可创建一级分类和二级子分类。首页左侧侧边栏会自动显示分类树，读者点击即可筛选。
+默认不发送邮件。FishBlog 使用 [Resend](https://resend.com/) 的邮件 API；需要 Resend 账户、经过验证的发件域名和 API Key。免费方案有用量限制，域名可能产生费用；请先查看 [Resend 当前价格和限制](https://resend.com/pricing)，也要考虑同一账户中其他应用的邮件用量。FishBlog 不会自动订购或升级套餐。
 
-### 标签
+将以下值作为 GitHub Actions Secrets 添加后重新运行部署工作流；也可以直接在 Cloudflare Worker 的 **Settings → Variables and Secrets** 中设置为加密 Secret：
 
-文章可添加多个标签（逗号分隔），也可以不加。标签会显示在文章详情页，点击 `#标签名` 可查看同标签下的所有文章。
+| Secret | 说明 |
+| --- | --- |
+| `RESEND_API_KEY` | Resend 仅发送权限的 API Key，勿提交到仓库 |
+| `MAIL_FROM` | 已在 Resend 验证的发件域名下的完整邮箱，例如 `blog@example.com` |
+| `SITE_URL` | 博客的公开地址，例如 `https://blog.example.com`，用于生成邮件链接 |
+| `ADMIN_NOTIFY_EMAIL` | 接收新留言通知的管理员邮箱；不填时只支持访客回复通知 |
 
-### 站点设置
+前三项配置完整后，勾选通知并填写邮箱的访客可以收到管理员回复；配置第四项后，新留言也会通知管理员。邮件服务商会收到收件地址及邮件内容；访客邮箱不会包含在公开页面或评论 API 中。
 
-进入后台 → **设置**，可修改博客标题、描述、底部文字，以及上传站点图标（Favicon）。
+为限制用量，本站最多在每个 UTC 自然日尝试发送 80 封，包括失败的尝试。邮件发送失败不会撤销评论或回复；待发送和失败数量可在后台“评论管理”查看，新通知会触发处理，也可以手动点击重试。系统没有定时投递任务，空闲时不会自动重试；每次处理通知时会清理超过 7 天的通知记录，已尝试发送的邮件超过安全重试期限后不会再次发送，无法保证每封邮件必达。
 
-### API Key
+要停用邮件通知，请从 **Cloudflare Worker 的 Secrets** 删除 `RESEND_API_KEY`，或使用 `wrangler secret delete RESEND_API_KEY`；如果 GitHub Actions 也配置过该 Secret，还需从 GitHub 删除，避免后续部署重新写入。仅从 GitHub 删除不会自动删除 Cloudflare 中已有的 Secret。停用后已有评论、回复和邮箱不会被删除。
 
-进入后台 → **API Keys**，可生成带权限控制的 Key，用于外部工具（如 AI 写作助手）接入：
+### 设置站点
 
-| 权限 | 说明 |
-|------|------|
-| `read` | 读取文章和分类 |
-| `create` | 创建文章 |
-| `update` | 编辑文章（标题、内容、标签等） |
-| `delete` | 删除文章 |
+后台“设置”可修改博客标题、描述、页脚和 Favicon；图标文件最大 1.4 MB。管理员登录会话到期或退出后需要重新登录。更新管理员密码会使旧会话失效。
 
-### REST API
+## API
 
-请求时在 Header 中携带 `Authorization: Bearer YOUR_API_KEY`。
+在后台 **API Keys** 创建密钥，按需要授予 `read`、`create`、`update` 和 `delete` 权限。请求时使用 `Authorization: Bearer YOUR_API_KEY`。拥有读取权限的密钥也可以读取草稿，请只授予可信的集成。
 
 | 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| `GET` | `/api/posts` | read | 获取文章列表（支持 `?page=` `?category_id=` `?all=true`） |
-| `GET` | `/api/posts/:slug` | read | 获取单篇文章（含标签） |
-| `GET` | `/api/posts/:slug/comments` | read | 获取文章评论列表 |
-| `POST` | `/api/posts` | create | 创建文章（支持 `is_pinned` 置顶） |
-| `PUT` | `/api/posts/:id` | update | 更新文章（支持 `is_pinned`） |
-| `DELETE` | `/api/posts/:id` | delete | 删除文章 |
-| `GET` | `/api/categories` | read | 获取分类树 |
-
-**创建文章示例：**
+| --- | --- | --- | --- |
+| `GET` | `/api/posts` | `read` | 文章列表；支持 `page`、`category_id` 和 `all=true` |
+| `GET` | `/api/posts/:slug` | `read` | 获取文章及标签 |
+| `GET` | `/api/posts/:slug/comments` | `read` | 获取文章评论 |
+| `POST` | `/api/posts` | `create` | 新建文章 |
+| `PUT` | `/api/posts/:id` | `update` | 更新文章 |
+| `DELETE` | `/api/posts/:id` | `delete` | 删除文章 |
+| `GET` | `/api/categories` | `read` | 获取分类树 |
+| `POST` | `/api/categories` | `create` | 新建分类 |
+| `PUT` | `/api/categories/:id` | `update` | 更新分类 |
+| `DELETE` | `/api/categories/:id` | `delete` | 删除分类 |
 
 ```bash
 curl -X POST https://your-blog.workers.dev/api/posts \
-  -H "Authorization: Bearer fb_your_key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Hello World",
-    "slug": "hello-world",
-    "content": "# Hello\n\n这是我的第一篇文章。",
-    "excerpt": "第一篇文章",
-    "tags": ["技术", "博客"],
-    "category_id": 1,
-    "published": 1
-  }'
+  -H 'Authorization: Bearer YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Hello World","slug":"hello-world","content":"# Hello","tags":["博客"],"published":1}'
 ```
 
-## 💻 本地开发
+## 本地开发与测试
+
+需要 Node.js 22。复制配置模板，并在本地配置管理员凭据：
 
 ```bash
-# 克隆仓库
 git clone https://github.com/qqzhoufan/fishblog.git
 cd fishblog
-
-# 复制配置模板
 cp wrangler.toml.example wrangler.toml
-
-# 安装依赖
-npm install
-
-# 创建本地 Secrets 文件
-echo -e 'ADMIN_USERNAME=admin\nADMIN_PASSWORD=123456' > .dev.vars
-
-# 启动开发服务器
+npm ci
+printf 'ADMIN_USERNAME=admin\nADMIN_PASSWORD=local-password\n' > .dev.vars
 npm run dev
 ```
 
-访问 http://localhost:8787 即可预览，代码修改后自动热重载。
+访问 `http://localhost:8787`。`.dev.vars` 和本地 Wrangler 数据不应提交到仓库。本地配置中的 D1 ID 是占位值，部署到自己的 Cloudflare 账户前需要替换。
 
-## 📁 项目结构
-
-```
-fishblog/
-├── src/
-│   ├── index.ts              # 应用入口，自动建表中间件
-│   ├── types.ts              # TypeScript 类型定义
-│   ├── routes/
-│   │   ├── blog.ts           # 前端路由：首页、文章、归档、搜索、标签、RSS
-│   │   ├── admin.ts          # 后台路由：文章/分类/API Key/设置 管理
-│   │   └── api.ts            # REST API：外部接入接口
-│   ├── templates/
-│   │   ├── layout.ts         # 前端模板（响应式 + 深浅主题 + 分类侧边栏）
-│   │   └── admin.ts          # 后台模板
-│   ├── middleware/
-│   │   └── auth.ts           # Cookie 认证 + API Key 验证
-│   └── db/
-│       ├── migrate.ts        # 增量自动建表
-│       └── queries.ts        # 数据库查询封装
-├── .github/workflows/
-│   └── deploy.yml            # GitHub Actions 全自动部署
-├── wrangler.toml.example     # Wrangler 配置模板
-├── tsconfig.json
-├── package.json
-├── README.md                 # 中文文档
-└── README_EN.md              # English documentation
+```bash
+npm run typecheck
+npm test
 ```
 
-## 🔧 自定义配置
+测试使用独立的临时数据库，不连接线上数据。推送到 `main` 后的部署工作流也会运行这些检查。
 
-### 通过后台设置（推荐）
+## 备份与升级
 
-进入 `/admin/settings` 可直接修改博客标题、描述、底部文字、站点图标。
+在 Cloudflare Dashboard 的 D1 数据库页面导出备份，或使用 Wrangler 的 D1 导出功能。部署前建议先在独立环境恢复副本，验证首页、历史文章、自定义 HTML、登录、评论和 API；确认正常后再更新线上版本。管理员凭据、API Key 和 D1 数据应分别妥善保存。
 
-### 通过代码修改
+## 项目结构
 
-| 需求 | 修改文件 |
-|------|----------|
-| 页面样式 | `src/templates/layout.ts` |
-| 后台样式 | `src/templates/admin.ts` |
-| 导航链接 | `src/templates/layout.ts` 中 `<nav>` 部分 |
-| 数据库字段 | `src/db/migrate.ts` + `src/db/queries.ts` |
-
-修改后 push 即自动部署生效。
-
-## ❓ FAQ
-
-**Q: 完全免费吗？**
-A: 是的。Cloudflare Workers Free Plan 每天 10 万次请求，D1 Free Plan 5GB 存储 + 500 万行读取/天。个人博客完全够用。
-
-**Q: 数据安全吗？**
-A: 管理员密码存储在 Cloudflare Secrets 中（加密），不会出现在代码或日志中。认证使用 SHA-256 哈希 + HttpOnly Cookie。API Key 也仅存储哈希值。
-
-**Q: 能承受多大流量？**
-A: Cloudflare Workers 运行在全球 300+ 边缘节点，Free Plan 每天 10 万请求，付费计划无上限。
-
-**Q: 如何备份数据？**
-A: 在 Cloudflare Dashboard → D1 → fishblog-db 中可以导出数据库。也可通过 `wrangler d1 export` 命令行导出。
-
-**Q: 如何更改管理员密码？**
-A: 在 GitHub 仓库 Settings → Secrets 中更新 `ADMIN_PASSWORD`，然后重新触发一次 Actions 部署即可。
-
-**Q: 如何接入 AI 自动写作？**
-A: 在后台生成一个带 `create` 权限的 API Key，然后通过 `POST /api/posts` 接口发布文章。可以接入任何支持 HTTP 调用的 AI 工具。
-
-## License
-
-[MIT](LICENSE)
+```text
+src/
+  db/           数据库初始化与查询
+  middleware/   登录会话和请求限速
+  routes/       博客、后台与 API 路由
+  services/     可选邮件通知及队列
+  templates/    页面模板和内容安全过滤
+  index.ts      Worker 入口
+tests/          隔离数据库与 Worker 回归测试
+.github/        GitHub Actions 部署工作流
+```

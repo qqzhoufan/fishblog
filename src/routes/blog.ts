@@ -1,8 +1,11 @@
 import { Hono } from "hono";
 import { marked } from "marked";
+import { checkRateLimit } from "../middleware/rate-limit.ts";
 import type { Env } from "../types.ts";
 import { layout, escapeHtml, formatDate } from "../templates/layout.ts";
-import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon, getTagsForPost, getPostsByTag, getAllTags, incrementPostViews, getCommentsForPost, createComment } from "../db/queries.ts";
+import { sanitizeContent } from "../templates/sanitize.ts";
+import { dispatchNotification } from "../services/notification-dispatch.ts";
+import { getPublishedPosts, getPostBySlug, getConfig, getCategoryTree, searchPosts, getFavicon, getTagsForPost, getPostsByTag, getAllTags, incrementPostViews, getCommentsForPost, getRepliesForPost, createComment } from "../db/queries.ts";
 import type { Post } from "../types.ts";
 
 const blog = new Hono<{ Bindings: Env }>();
@@ -94,9 +97,10 @@ blog.get("/post/:slug", async (c) => {
     return c.html(layout("404", '<p style="text-align:center;padding:3rem">文章不存在</p>', config, { categories }), 404);
   }
 
-  const [tags, comments] = await Promise.all([
+  const [tags, comments, replies] = await Promise.all([
     getTagsForPost(c.env.DB, post.id),
     getCommentsForPost(c.env.DB, post.id),
+    getRepliesForPost(c.env.DB, post.id),
   ]);
   await incrementPostViews(c.env.DB, post.id);
   post.views = (post.views ?? 0) + 1;
@@ -107,14 +111,15 @@ blog.get("/post/:slug", async (c) => {
 
   const commentItems = comments
     .map(
-      (cm) => `<li class="comment-item">
+      (cm) => `<li class="comment-item" id="comment-${cm.id}">
         <div class="comment-head"><strong>${escapeHtml(cm.author)}</strong><span>${formatDate(cm.created_at, true)}</span></div>
         <p>${escapeHtml(cm.content)}</p>
+        ${replies.some((reply) => reply.comment_id === cm.id) ? `<div class="comment-replies">${replies.filter((reply) => reply.comment_id === cm.id).map((reply) => `<div class="comment-reply"><div class="comment-head"><strong>博主回复</strong><span>${formatDate(reply.created_at, true)}</span></div><p>${escapeHtml(reply.content)}</p></div>`).join("")}</div>` : ""}
       </li>`
     )
     .join("");
 
-  const html = await marked(post.content);
+  const html = sanitizeContent(await marked(post.content));
   const commentsEnabled = config.comments_enabled !== "0";
 
   const commentsHtml = commentsEnabled
@@ -124,6 +129,8 @@ blog.get("/post/:slug", async (c) => {
     <form method="POST" action="/post/${escapeHtml(post.slug)}/comment" class="comment-form">
       <input type="text" name="author" placeholder="昵称" required maxlength="30">
       <textarea name="content" placeholder="写下你的评论..." required maxlength="2000"></textarea>
+      <input type="email" name="email" placeholder="邮箱（选填，仅用于回复通知）" maxlength="254" autocomplete="email">
+      <label class="comment-notify"><input type="checkbox" name="notify" value="1"> 接收回复通知（需站点启用邮件通知）</label>
       <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
       <input type="hidden" name="t" id="ct-ts">
       <button type="submit">发表评论</button>
@@ -149,6 +156,8 @@ blog.get("/post/:slug", async (c) => {
 });
 
 blog.post("/post/:slug/comment", async (c) => {
+  const retryAfter = await checkRateLimit(c, "comment", 20, 10 * 60);
+  if (retryAfter) return c.text("评论提交过于频繁，请稍后再试", 429, { "Retry-After": String(retryAfter) });
   const slug = c.req.param("slug");
   const [post, config] = await Promise.all([
     getPostBySlug(c.env.DB, slug),
@@ -162,16 +171,27 @@ blog.post("/post/:slug/comment", async (c) => {
   const t = parseInt((body.t as string) || "0");
   const author = ((body.author as string) || "").trim().slice(0, 30);
   const content = ((body.content as string) || "").trim().slice(0, 2000);
+  const wantsNotification = body.notify === "1";
+  const email = typeof body.email === "string" ? body.email.trim() : "";
+
+  if (wantsNotification && (email.length > 254 || /[\x00-\x1f\x7f]/.test(email) || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))) {
+    return c.text("请填写有效的邮箱，或取消勾选回复通知。", 400);
+  }
 
   const ok = author && content && !website && t && Date.now() - t >= 3000;
   if (!ok) return c.redirect(`/post/${escapeHtml(slug)}#comments`);
 
-  await createComment(c.env.DB, { post_id: post.id, author, content });
+  const result = await createComment(c.env.DB, { post_id: post.id, author, content }, wantsNotification ? email : undefined);
+  const commentId = result.meta?.last_row_id;
+  if (commentId) await dispatchNotification(c, {
+    kind: "comment", eventId: String(commentId), commentId,
+    postTitle: post.title, postSlug: post.slug, author, content,
+  });
   return c.redirect(`/post/${escapeHtml(slug)}#comments`);
 });
 
 blog.get("/tag/:name", async (c) => {
-  const tagName = decodeURIComponent(c.req.param("name"));
+  const tagName = c.req.param("name");
   const page = parseInt(c.req.query("page") || "1");
 
   const [{ posts, total }, config, categories] = await Promise.all([

@@ -6,7 +6,7 @@ import {
   createPost, updatePost, deletePost,
   getCategoryTree, getAllCategories, createCategory, updateCategory, deleteCategory,
   getApiKeyByHash, touchApiKey,
-  getTagsForPost, syncPostTags,
+  getTagsForPost,
   getCommentsForPost,
 } from "../db/queries.ts";
 
@@ -93,7 +93,7 @@ api.post("/posts", async (c) => {
 
   if (!body.title || !body.slug) return err("title and slug are required", 400);
 
-  const result = await createPost(c.env.DB, {
+  await createPost(c.env.DB, {
     title: body.title,
     slug: body.slug,
     content: body.content || "",
@@ -101,10 +101,7 @@ api.post("/posts", async (c) => {
     published: body.published ?? 1,
     category_id: body.category_id ?? null,
     is_pinned: body.is_pinned ?? 0,
-  });
-
-  const postId = result.meta.last_row_id;
-  if (postId && body.tags) await syncPostTags(c.env.DB, postId, body.tags);
+  }, body.tags || undefined);
 
   const post = await getPostBySlug(c.env.DB, body.slug);
   return c.json({ success: true, post, tags: body.tags || [] }, 201);
@@ -123,8 +120,6 @@ api.put("/posts/:id", async (c) => {
     excerpt?: string; published?: number; category_id?: number | null; tags?: string[]; is_pinned?: number;
   }>();
 
-  if (body.tags) await syncPostTags(c.env.DB, id, body.tags);
-
   await updatePost(c.env.DB, id, {
     title: body.title,
     slug: body.slug,
@@ -133,7 +128,7 @@ api.put("/posts/:id", async (c) => {
     published: body.published,
     category_id: body.category_id,
     is_pinned: body.is_pinned,
-  });
+  }, body.tags || undefined);
 
   const post = await getPostById(c.env.DB, id);
   return c.json({ success: true, post });

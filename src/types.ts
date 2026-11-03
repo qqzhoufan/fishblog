@@ -4,6 +4,10 @@ export type Env = {
   BLOG_DESCRIPTION: string;
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD: string;
+  RESEND_API_KEY?: string;
+  MAIL_FROM?: string;
+  ADMIN_NOTIFY_EMAIL?: string;
+  SITE_URL?: string;
 };
 
 export type Post = {
@@ -26,6 +30,13 @@ export type Comment = {
   id: number;
   post_id: number;
   author: string;
+  content: string;
+  created_at: string;
+};
+
+export type CommentReply = {
+  id: number;
+  comment_id: number;
   content: string;
   created_at: string;
 };
